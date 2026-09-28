@@ -87,13 +87,27 @@ export async function getLodgingDashboard(client: PoolClient, organizationId: st
 }
 
 export async function getPublicLodgingCalendar(token: string) {
-  const { getPool } = await import("./client");
-  const result = await getPool().query<{
+  const { getServicePool } = await import("./client");
+  const result = await getServicePool().query<{
     unit_name: string;
     stay_id: string;
     starts_on: string;
     ends_on: string;
-  }>("SELECT unit_name,stay_id,starts_on,ends_on FROM resolve_lodging_export_calendar($1)", [sha256(token)]);
+  }>(
+    `SELECT u.name AS unit_name,s.id AS stay_id,s.starts_on,s.ends_on
+       FROM lodging_export_tokens t
+       JOIN lodging_units u
+         ON u.organization_id=t.organization_id AND u.id=t.unit_id
+       JOIN lodging_stays s
+         ON s.organization_id=t.organization_id AND s.unit_id=t.unit_id
+      WHERE t.token_hash=$1
+        AND t.revoked_at IS NULL
+        AND s.status IN ('tentative','confirmed','blocked')
+        AND s.source_provider<>t.target_provider
+        AND s.ends_on>=CURRENT_DATE
+      ORDER BY s.starts_on,s.ends_on`,
+    [sha256(token)]
+  );
   return {
     name: result.rows[0]?.unit_name ?? "VenueLoom Availability",
     events: result.rows.map((row) => ({
