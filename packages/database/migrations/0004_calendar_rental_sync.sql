@@ -149,7 +149,6 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, id),
-  UNIQUE (organization_id, connection_id, object_type, external_id, state),
   FOREIGN KEY (organization_id, connection_id)
     REFERENCES integration_connections (organization_id, id) ON DELETE CASCADE,
   FOREIGN KEY (organization_id, venue_calendar_id)
@@ -158,6 +157,9 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
 
 CREATE INDEX IF NOT EXISTS sync_conflicts_open_idx
   ON sync_conflicts (organization_id, state, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS sync_conflicts_one_open_uq
+  ON sync_conflicts (organization_id, connection_id, object_type, external_id)
+  WHERE state = 'open' AND external_id IS NOT NULL;
 
 DO $
 DECLARE
