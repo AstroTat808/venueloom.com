@@ -24,7 +24,8 @@ function duplicateKey(entity: ImportEntity, row: Record<string, unknown>): strin
 export function createImportPreview(
   entity: ImportEntity,
   sheet: ParsedSheet,
-  mapping: FieldMapping
+  mapping: FieldMapping,
+  options?: { preserveUnmappedFields?: boolean; providerProfileId?: string }
 ): ImportPreview {
   const schema = importSchemas[entity];
   const firstSeen = new Map<string, number>();
@@ -35,9 +36,34 @@ export function createImportPreview(
 
     for (const field of schema) {
       const sourceHeader = mapping[field.key];
-      const result = normalizeField(field, sourceHeader ? source[sourceHeader] : undefined);
+      let sourceValue = sourceHeader ? source[sourceHeader] : undefined;
+      if (
+        options?.providerProfileId === "dubsado" &&
+        (field.key === "name" || field.key === "client_name")
+      ) {
+        const firstHeader = Object.keys(source).find((header) => header.toLowerCase().replace(/[^a-z0-9]/g, "") === "clientfirstname");
+        const lastHeader = Object.keys(source).find((header) => header.toLowerCase().replace(/[^a-z0-9]/g, "") === "clientlastname");
+        const fullName = [firstHeader ? source[firstHeader] : null, lastHeader ? source[lastHeader] : null]
+          .filter((value) => value !== null && value !== undefined && String(value).trim())
+          .map((value) => String(value).trim())
+          .join(" ");
+        if (fullName) sourceValue = fullName;
+      }
+      const result = normalizeField(field, sourceValue);
       normalized[field.key] = result.value;
       if (result.issue) issues.push(result.issue);
+    }
+
+    if (options?.preserveUnmappedFields) {
+      const mappedHeaders = new Set(Object.values(mapping).filter((value): value is string => Boolean(value)));
+      if (options.providerProfileId === "dubsado" && (mapping.name || mapping.client_name)) {
+        for (const header of Object.keys(source)) {
+          const normalized = header.toLowerCase().replace(/[^a-z0-9]/g, "");
+          if (normalized === "clientfirstname" || normalized === "clientlastname") mappedHeaders.add(header);
+        }
+      }
+      const customFields = Object.fromEntries(Object.entries(source).filter(([header, value]) => !mappedHeaders.has(header) && value !== null && value !== ""));
+      if (Object.keys(customFields).length) normalized.custom_fields = customFields;
     }
 
     const rowNumber = index + 2;

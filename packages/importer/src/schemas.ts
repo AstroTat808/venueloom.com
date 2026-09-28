@@ -27,7 +27,7 @@ export const importSchemas: Record<ImportEntity, FieldDefinition[]> = {
     { key: "event_name", label: "Event name", required: true, aliases: ["event","event name","project","project name","job"], type: "string" },
     { key: "event_type", label: "Event type", aliases: ["event type","type","project type"], type: "string" },
     { key: "starts_at", label: "Starts at", required: true, aliases: ["start","start time","starts at","event date","date"], type: "datetime" },
-    { key: "ends_at", label: "Ends at", aliases: ["end","end time","ends at"], type: "datetime" },
+    { key: "ends_at", label: "Ends at", required: true, aliases: ["end","end time","ends at","end date"], type: "datetime" },
     { key: "guest_count", label: "Guests", aliases: ["guests","guest count","attendance","attendees"], type: "integer" },
     { key: "booking_amount", label: "Booking amount", aliases: ["booking amount","total","value","project value"], type: "money" },
     { key: "status", label: "Status", aliases: ["status","project status","stage"], type: "string" }
@@ -44,6 +44,7 @@ export const importSchemas: Record<ImportEntity, FieldDefinition[]> = {
   payments: [
     { key: "reference", label: "Reference", aliases: ["reference","transaction","transaction id","payment id","receipt"], type: "string" },
     { key: "client_name", label: "Client name", aliases: ["client","client name","customer","customer name"], type: "string" },
+    { key: "client_email", label: "Client email", aliases: ["email","client email","customer email"], type: "email" },
     { key: "invoice_number", label: "Invoice number", aliases: ["invoice","invoice number","invoice #"], type: "string" },
     { key: "received_date", label: "Received date", required: true, aliases: ["date","payment date","received date","paid date"], type: "date" },
     { key: "amount", label: "Amount", required: true, aliases: ["amount","payment","payment amount","total"], type: "money" },

@@ -11,7 +11,8 @@ export type ProviderCategory =
   | "storage"
   | "communications"
   | "data"
-  | "venue";
+  | "venue"
+  | "lodging";
 
 export type ProviderImplementation =
   | "ready"
@@ -25,6 +26,7 @@ export type ConnectionMethod =
   | "api_key"
   | "webhook_bridge"
   | "file"
+  | "ical"
   | "partner_api";
 
 export type SyncMode = "migration" | "inbound" | "outbound" | "two_way";
@@ -47,7 +49,8 @@ export type IntegrationObject =
   | "email"
   | "campaigns"
   | "audiences"
-  | "notifications";
+  | "notifications"
+  | "lodging_reservations";
 
 export interface ProviderCapability {
   object: IntegrationObject;

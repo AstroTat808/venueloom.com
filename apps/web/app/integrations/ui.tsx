@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderDefinition, ProviderCategory } from "@venueloom/integrations";
-import { importSchemas, type ImportEntity } from "@venueloom/importer";
+import { importSchemas } from "@venueloom/importer/schemas";
+import type { ImportEntity } from "@venueloom/importer/types";
+import { CalendarSyncPanel } from "./calendar-ui";
+import { LodgingSyncPanel } from "./lodging-ui";
 
-type DashboardTab = "catalog" | "migration" | "sync" | "conflicts";
+type DashboardTab = "catalog" | "migration" | "calendar" | "lodging" | "sync" | "conflicts";
 
 type PreviewResponse = {
   error?: string;
@@ -20,6 +23,7 @@ type PreviewResponse = {
     requiredMapped: number;
     canPreview: boolean;
   };
+  detectedProvider?: { id: string; name: string } | null;
   preview?: {
     totals: { discovered: number; create: number; skip: number; error: number };
     rows: Array<{
@@ -34,6 +38,8 @@ type PreviewResponse = {
 const tabs: Array<{ id: DashboardTab; label: string; hint: string }> = [
   { id: "catalog", label: "Integrations", hint: "Connect systems" },
   { id: "migration", label: "Migration", hint: "Bring your data" },
+  { id: "calendar", label: "Calendars", hint: "Google & Outlook" },
+  { id: "lodging", label: "Lodging", hint: "Airbnb & Vrbo" },
   { id: "sync", label: "Sync Center", hint: "Watch data flow" },
   { id: "conflicts", label: "Conflicts", hint: "Resolve changes" }
 ];
@@ -62,7 +68,8 @@ const categoryLabels: Record<string, string> = {
   storage: "Storage",
   communications: "Communications",
   data: "Data",
-  venue: "Venue systems"
+  venue: "Venue systems",
+  lodging: "Lodging"
 };
 
 function implementationLabel(provider: ProviderDefinition) {
@@ -86,7 +93,15 @@ function formatMode(mode: string) {
   return "Migration";
 }
 
-export function IntegrationsDashboard({ providers }: { providers: ProviderDefinition[] }) {
+export function IntegrationsDashboard({
+  providers,
+  organizationName,
+  venues
+}: {
+  providers: ProviderDefinition[];
+  organizationName: string;
+  venues: Array<{ id: string; name: string }>;
+}) {
   const [tab, setTab] = useState<DashboardTab>("catalog");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>("all");
@@ -136,9 +151,11 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
         </nav>
 
         <div className="sidebar-foot">
-          <div className="workspace-avatar">KE</div>
+          <div className="workspace-avatar">
+            {organizationName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "VL"}
+          </div>
           <div>
-            <strong>Koa's Events</strong>
+            <strong>{organizationName}</strong>
             <span>Organization workspace</span>
           </div>
         </div>
@@ -267,7 +284,11 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
           </section>
         )}
 
-        {tab === "migration" && <MigrationWizard />}
+        {tab === "migration" && <MigrationWizard venues={venues} />}
+
+        {tab === "calendar" && <CalendarSyncPanel venues={venues} />}
+
+        {tab === "lodging" && <LodgingSyncPanel venues={venues} />}
 
         {tab === "sync" && <SyncCenter providers={providers} />}
 
@@ -309,14 +330,21 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
                 <button className="button primary full" onClick={() => { setSelectedProvider(null); setTab("migration"); }}>
                   Start file migration
                 </button>
+              ) : selectedProvider.id === "google-calendar" || selectedProvider.id === "outlook-calendar" ? (
+                <button className="button primary full" onClick={() => { setSelectedProvider(null); setTab("calendar"); }}>
+                  Configure calendar sync
+                </button>
+              ) : selectedProvider.id === "airbnb" || selectedProvider.id === "vrbo" ? (
+                <button className="button primary full" onClick={() => { setSelectedProvider(null); setTab("lodging"); }}>
+                  Configure lodging sync
+                </button>
               ) : (
                 <>
                   <button className="button secondary full" disabled>
                     Connect {selectedProvider.name} — adapter activation pending
                   </button>
                   <div className="notice">
-                    The Connect control is intentionally locked until this provider's OAuth/API adapter is implemented and
-                    security-tested. The capability drawer shows exactly what will be eligible for sync when activated.
+                    This provider remains capability-mapped but inactive until its connector passes the documented release gates.
                   </div>
                 </>
               )}
@@ -328,7 +356,7 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
   );
 }
 
-function MigrationWizard() {
+function MigrationWizard({ venues }: { venues: Array<{ id: string; name: string }> }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [entity, setEntity] = useState<ImportEntity>("clients");
   const [file, setFile] = useState<File | null>(null);
@@ -336,6 +364,15 @@ function MigrationWizard() {
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [selectedSheet, setSelectedSheet] = useState("");
   const [busy, setBusy] = useState(false);
+  const [commitBusy, setCommitBusy] = useState(false);
+  const [commitResult, setCommitResult] = useState<null | {
+    importRunId: string;
+    created: number;
+    updated: number;
+    skipped: number;
+    conflicts: number;
+  }>(null);
+  const [selectedVenueId, setSelectedVenueId] = useState(venues[0]?.id ?? "");
 
   async function preview(nextMapping?: Record<string, string | null>, sheetOverride?: string) {
     if (!file) return;
@@ -362,6 +399,30 @@ function MigrationWizard() {
     setResult(null);
     setMapping({});
     setSelectedSheet("");
+    setCommitResult(null);
+  }
+
+  async function commitMigration() {
+    if (!file || !result?.preview || result.preview.totals.error > 0) return;
+    setCommitBusy(true);
+    setCommitResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("entity", entity);
+      form.append("mapping", JSON.stringify(mapping));
+      if (selectedSheet) form.append("sheet", selectedSheet);
+      if (selectedVenueId) form.append("venueId", selectedVenueId);
+      const response = await fetch("/api/import/commit", { method: "POST", body: form });
+      const json = await response.json();
+      if (!response.ok) {
+        setResult((current) => current ? { ...current, error: json.error ?? "Import failed" } : { error: json.error ?? "Import failed" });
+        return;
+      }
+      setCommitResult(json);
+    } finally {
+      setCommitBusy(false);
+    }
   }
 
   return (
@@ -456,6 +517,9 @@ function MigrationWizard() {
                   <div>
                     <h3>Confirm field mapping</h3>
                     <p>VenueLoom guessed the best match. Change any mapping before running the dry run.</p>
+                    {result.detectedProvider && (
+                      <span className="provider-detected">{result.detectedProvider.name} export detected · smart aliases applied</span>
+                    )}
                   </div>
                   <span className={result.coverage?.canPreview ? "secure-badge" : "warning-badge"}>
                     {result.coverage?.mappedFields}/{result.coverage?.totalFields} mapped
@@ -535,11 +599,30 @@ function MigrationWizard() {
                   <p className="table-note">Showing the first 50 rows of {result.preview.rows.length}.</p>
                 )}
 
-                <div className="notice amber">
-                  Import commit is intentionally locked until authenticated organization context and the PostgreSQL migration are active.
-                  This prevents an upload from writing into the wrong venue or organization.
+                {venues.length > 0 && (
+                  <label className="commit-venue">
+                    <span>Target venue</span>
+                    <select value={selectedVenueId} onChange={(event) => setSelectedVenueId(event.target.value)}>
+                      <option value="">Organization-wide / no venue</option>
+                      {venues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
+                    </select>
+                  </label>
+                )}
+                <div className="notice">
+                  Commit re-parses the original file on the server, re-validates the mapping, verifies your organization and venue access, and records every imported row in the audit trail.
                 </div>
-                <button className="button disabled-button" disabled>Commit migration — authentication required</button>
+                <button
+                  className="button primary"
+                  disabled={commitBusy || result.preview.totals.error > 0}
+                  onClick={() => void commitMigration()}
+                >
+                  {commitBusy ? "Committing migration…" : "Commit migration"}
+                </button>
+                {commitResult && (
+                  <div className="notice">
+                    Migration committed · {commitResult.created} created · {commitResult.updated} updated · {commitResult.skipped} skipped · {commitResult.conflicts} conflicts queued.
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -550,13 +633,13 @@ function MigrationWizard() {
         <aside className="wizard-aside">
           <div className="aside-card">
             <span className="eyebrow">Safe migration</span>
-            <h3>Nothing is written during preview.</h3>
+            <h3>Preview first. Commit only after review.</h3>
             <ul>
               <li>Headers are auto-matched, then confirmed by you.</li>
               <li>Amounts become integer cents to preserve financial precision.</li>
               <li>Likely duplicates are skipped, not silently merged.</li>
               <li>Invalid dates, emails and numbers are surfaced row-by-row.</li>
-              <li>Bookings will still pass VenueLoom conflict checks when commit is enabled.</li>
+              <li>Bookings pass VenueLoom reservation, calendar, and lodging conflict checks at commit time.</li>
             </ul>
           </div>
           <div className="aside-card soft">
@@ -578,12 +661,104 @@ function Summary({ label, value, tone = "plain" }: { label: string; value: numbe
   );
 }
 
+type SyncCenterData = {
+  summary: {
+    activeConnections: number;
+    pendingJobs: number;
+    deadLetters: number;
+    openConflicts: number;
+    unhealthyConnections: number;
+  };
+  connections: Array<{
+    id: string;
+    provider_code: string;
+    connection_name: string;
+    status: string;
+  }>;
+  bindings: Array<{
+    id: string;
+    provider_code: string;
+    provider_calendar_name: string;
+    sync_direction: string;
+    last_synced_at: string | null;
+    last_error: string | null;
+    sync_enabled: boolean;
+  }>;
+  feeds: Array<{
+    id: string;
+    provider: string;
+    unit_name: string;
+    last_synced_at: string | null;
+    last_error: string | null;
+    enabled: boolean;
+  }>;
+  queue: Array<{
+    id: string;
+    reason: string;
+    attempts: number;
+    last_error: string | null;
+    completed_at: string | null;
+    dead_lettered_at: string | null;
+    created_at: string;
+  }>;
+  imports: Array<{
+    id: string;
+    entity_type: string;
+    source_name: string;
+    state: string;
+    discovered_count: number;
+    create_count: number;
+    update_count: number;
+    skip_count: number;
+    conflict_count: number;
+    error_count: number;
+    created_at: string;
+  }>;
+};
+
+function providerDisplay(value: string) {
+  const names: Record<string, string> = {
+    "google-calendar": "Google Calendar",
+    "outlook-calendar": "Microsoft Outlook",
+    airbnb: "Airbnb",
+    vrbo: "Vrbo"
+  };
+  return names[value] ?? formatObject(value);
+}
+
 function SyncCenter({ providers }: { providers: ProviderDefinition[] }) {
-  const examples = [
-    { provider: "QuickBooks Online", object: "Invoices", direction: "VenueLoom → QBO", status: "Ready for adapter", count: "—" },
-    { provider: "Google Calendar", object: "Events", direction: "↔ Two-way", status: "Ready for OAuth", count: "—" },
-    { provider: "Dubsado", object: "Leads", direction: "Dubsado → VenueLoom", status: "Bridge planned", count: "—" },
-    { provider: "CSV / XLSX", object: "All import types", direction: "File → VenueLoom", status: "Preview engine ready", count: "7 types" }
+  const [data, setData] = useState<SyncCenterData | null>(null);
+  const [error, setError] = useState("");
+
+  async function load() {
+    const response = await fetch("/api/integrations/sync-center", { cache: "no-store" });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Unable to load sync center");
+      return;
+    }
+    setData(json);
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  const operationalRows = [
+    ...(data?.bindings ?? []).map((row) => ({
+      key: `binding:${row.id}`,
+      provider: providerDisplay(row.provider_code),
+      object: row.provider_calendar_name,
+      direction: row.sync_direction === "two_way" ? "↔ Two-way" : row.sync_direction === "inbound" ? "→ VenueLoom" : "VenueLoom →",
+      state: row.last_error ? "Needs attention" : row.sync_enabled ? "Active" : "Paused",
+      detail: row.last_synced_at ? new Date(row.last_synced_at).toLocaleString() : "Initial sync queued"
+    })),
+    ...(data?.feeds ?? []).map((row) => ({
+      key: `feed:${row.id}`,
+      provider: providerDisplay(row.provider),
+      object: row.unit_name,
+      direction: "↔ iCal availability",
+      state: row.last_error ? "Needs attention" : row.enabled ? "Active" : "Paused",
+      detail: row.last_synced_at ? new Date(row.last_synced_at).toLocaleString() : "Initial sync queued"
+    }))
   ];
 
   return (
@@ -592,49 +767,221 @@ function SyncCenter({ providers }: { providers: ProviderDefinition[] }) {
         <div>
           <span className="eyebrow">Sync Center</span>
           <h2>One place to see every data movement.</h2>
-          <p>Live run history appears here once a provider is authorized. Current rows show the connector foundation state.</p>
+          <p>Connection health, reconciliation work, dead letters, migration results, and conflicts are scoped to this VenueLoom organization.</p>
         </div>
-        <span className="secure-badge">{providers.length} catalog providers</span>
+        <button className="button secondary" onClick={() => void load()}>Refresh</button>
       </div>
+
+      {error && <div className="notice error">{error}</div>}
 
       <div className="sync-overview">
         <div className="sync-health-card">
-          <span>Connection health</span>
-          <strong>Not configured</strong>
-          <small>No production credentials are stored.</small>
+          <span>Active connections</span>
+          <strong>{data?.summary.activeConnections ?? 0}</strong>
+          <small>{data?.summary.unhealthyConnections ? `${data.summary.unhealthyConnections} needs attention` : "No provider errors reported"}</small>
         </div>
         <div className="sync-health-card">
-          <span>Failed records</span>
-          <strong>0</strong>
-          <small>Dead-letter queues begin with live adapters.</small>
+          <span>Pending / dead-letter jobs</span>
+          <strong>{data ? `${data.summary.pendingJobs} / ${data.summary.deadLetters}` : "0 / 0"}</strong>
+          <small>Dead letters stop retrying after the bounded attempt limit.</small>
         </div>
         <div className="sync-health-card">
           <span>Open conflicts</span>
-          <strong>0</strong>
-          <small>Protected-field conflicts require review.</small>
+          <strong>{data?.summary.openConflicts ?? 0}</strong>
+          <small>Protected changes require an explicit resolution.</small>
         </div>
       </div>
 
       <div className="sync-table">
         <div className="sync-table-head">
-          <span>Provider</span><span>Object</span><span>Direction</span><span>State</span><span>Records</span>
+          <span>Provider</span><span>Calendar / house</span><span>Direction</span><span>State</span><span>Last sync</span>
         </div>
-        {examples.map((row) => (
-          <div className="sync-table-row" key={row.provider + row.object}>
+        {operationalRows.length ? operationalRows.map((row) => (
+          <div className="sync-table-row" key={row.key}>
             <strong>{row.provider}</strong>
             <span>{row.object}</span>
             <span>{row.direction}</span>
-            <span className="sync-state">{row.status}</span>
-            <span>{row.count}</span>
+            <span className="sync-state">{row.state}</span>
+            <span>{row.detail}</span>
           </div>
-        ))}
+        )) : (
+          <div className="sync-table-row sync-empty-row">
+            <strong>No live sync configured</strong>
+            <span>Connect Google, Outlook, Airbnb, or Vrbo.</span>
+            <span>—</span><span>—</span><span>—</span>
+          </div>
+        )}
+      </div>
+
+      <div className="ops-grid">
+        <div className="ops-panel">
+          <div className="ops-panel-head"><h3>Recent migrations</h3><span>{data?.imports.length ?? 0}</span></div>
+          {(data?.imports ?? []).length ? data!.imports.map((run) => (
+            <div className="ops-row" key={run.id}>
+              <div><strong>{run.source_name}</strong><span>{formatObject(run.entity_type)} · {run.state}</span></div>
+              <small>{run.create_count} created · {run.update_count} updated · {run.skip_count} skipped · {run.conflict_count} conflicts</small>
+            </div>
+          )) : <p className="ops-empty">No committed migrations yet.</p>}
+        </div>
+
+        <div className="ops-panel">
+          <div className="ops-panel-head"><h3>Queue & dead letters</h3><span>{data?.queue.length ?? 0}</span></div>
+          {(data?.queue ?? []).length ? data!.queue.slice(0, 12).map((job) => (
+            <div className="ops-row" key={job.id}>
+              <div><strong>{job.reason.replaceAll("-", " ")}</strong><span>{job.dead_lettered_at ? "Dead letter" : job.completed_at ? "Completed" : "Pending"} · attempt {job.attempts}</span></div>
+              <small>{job.last_error ?? new Date(job.created_at).toLocaleString()}</small>
+            </div>
+          )) : <p className="ops-empty">No sync jobs yet.</p>}
+        </div>
+      </div>
+
+      <div className="notice">
+        {providers.length} providers are capability-mapped in the catalog. Only activated adapters create operational rows here.
       </div>
     </section>
   );
 }
 
+type LiveConflict = {
+  id: string;
+  object_type: string;
+  internal_id?: string | null;
+  external_id?: string | null;
+  field_name: string;
+  venueloom_value: unknown;
+  external_value: unknown;
+  created_at: string;
+  provider_code?: string | null;
+  connection_name?: string | null;
+  event_name?: string | null;
+};
+
+function conflictValue(value: unknown) {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const parts = [
+      record.name ? String(record.name) : null,
+      record.startsAt || record.starts_at ? `Start: ${String(record.startsAt ?? record.starts_at)}` : null,
+      record.endsAt || record.ends_at ? `End: ${String(record.endsAt ?? record.ends_at)}` : null
+    ].filter(Boolean);
+    return parts.length ? parts.join(" · ") : JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function ConflictCard({ conflict, onResolved }: { conflict: LiveConflict; onResolved: () => void }) {
+  const [resolution, setResolution] = useState<"venueloom" | "external" | "merged" | "ignored">("venueloom");
+  const [name, setName] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function resolve(resolutionOverride?: "venueloom" | "external" | "merged" | "ignored") {
+    const chosenResolution = resolutionOverride ?? resolution;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/integrations/conflicts/${conflict.id}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resolution: chosenResolution,
+          mergedValue: chosenResolution === "merged"
+            ? {
+                ...(name.trim() ? { name: name.trim() } : {}),
+                ...(startsAt ? { startsAt } : {}),
+                ...(endsAt ? { endsAt } : {})
+              }
+            : undefined
+        })
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        setError(json.error ?? "Unable to resolve conflict");
+        return;
+      }
+      onResolved();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="conflict-demo">
+      <div className="conflict-demo-head">
+        <div>
+          <span className="eyebrow">{conflict.provider_code?.replaceAll("_", " ") ?? "External system"} · {conflict.field_name}</span>
+          <h3>{conflict.event_name ?? "Protected synchronized record"}</h3>
+          <p>Detected {new Date(conflict.created_at).toLocaleString()} · {conflict.connection_name ?? "Connected calendar"}</p>
+        </div>
+        <span className="warning-badge">Needs review</span>
+      </div>
+
+      <div className="comparison-grid">
+        <button className={resolution === "venueloom" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("venueloom")}>
+          <span>Keep VenueLoom</span>
+          <strong>Current value</strong>
+          <small>{conflictValue(conflict.venueloom_value)}</small>
+        </button>
+        <button className={resolution === "external" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("external")}>
+          <span>Use external</span>
+          <strong>Incoming value</strong>
+          <small>{conflictValue(conflict.external_value)}</small>
+        </button>
+        <button className={resolution === "merged" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("merged")}>
+          <span>Merge manually</span>
+          <strong>Custom value</strong>
+          <small>VenueLoom re-checks availability before saving.</small>
+        </button>
+      </div>
+
+      {resolution === "merged" && (
+        <div className="merge-fields">
+          <label>Event name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Keep current if blank" /></label>
+          <label>Start with offset<input type="text" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} placeholder="2026-10-01T18:00:00-10:00" /></label>
+          <label>End with offset<input type="text" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} placeholder="2026-10-01T22:00:00-10:00" /></label>
+        </div>
+      )}
+
+      <div className="conflict-impact">
+        <strong>Before a date/time resolution VenueLoom re-checks:</strong>
+        <span>reservation availability</span>
+        <span>external calendar blocks</span>
+        <span>lodging occupancy blocks</span>
+        <span>event version</span>
+      </div>
+
+      {error && <div className="notice error">{error}</div>}
+      <div className="conflict-actions">
+        <button className="button primary" disabled={busy} onClick={() => void resolve()}>
+          {busy ? "Resolving…" : resolution === "venueloom" ? "Keep VenueLoom" : resolution === "external" ? "Accept external" : resolution === "merged" ? "Save merged value" : "Resolve"}
+        </button>
+        <button className="button secondary" disabled={busy} onClick={() => void resolve("ignored")}>
+          Ignore external change
+        </button>
+      </div>
+    </article>
+  );
+}
+
 function ConflictCenter() {
-  const [resolution, setResolution] = useState<"venueloom" | "external" | "merged">("venueloom");
+  const [conflicts, setConflicts] = useState<LiveConflict[]>([]);
+  const [error, setError] = useState("");
+
+  async function load() {
+    const response = await fetch("/api/integrations/conflicts", { cache: "no-store" });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Unable to load conflicts");
+      return;
+    }
+    setConflicts(json.conflicts ?? []);
+  }
+
+  useEffect(() => { void load(); }, []);
 
   return (
     <section className="content-section">
@@ -642,58 +989,23 @@ function ConflictCenter() {
         <div>
           <span className="eyebrow">Conflict resolution</span>
           <h2>Protected changes never disappear into “last write wins.”</h2>
-          <p>VenueLoom will queue concurrent edits to booking dates, issued invoices, payments and executed contracts for explicit review.</p>
+          <p>Concurrent calendar edits and availability conflicts stay pending until an authorized VenueLoom user explicitly resolves them.</p>
         </div>
-        <span className="secure-badge">0 live conflicts</span>
+        <span className={conflicts.length ? "warning-badge" : "secure-badge"}>{conflicts.length} open conflict{conflicts.length === 1 ? "" : "s"}</span>
       </div>
 
+      {error && <div className="notice error">{error}</div>}
+
       <div className="conflict-layout">
-        <div className="empty-state compact">
-          <div className="empty-orbit">✓</div>
-          <h3>No live conflicts.</h3>
-          <p>When integrations are connected, competing VenueLoom and provider edits will appear here with both values, timestamps and source versions.</p>
-        </div>
-
-        <div className="conflict-demo">
-          <div className="conflict-demo-head">
-            <div>
-              <span className="eyebrow">Conflict UI preview</span>
-              <h3>Event start time changed in two systems</h3>
-              <p>This is a non-live example showing the exact review experience.</p>
-            </div>
-            <span className="warning-badge">Protected field</span>
+        {!conflicts.length ? (
+          <div className="empty-state compact">
+            <div className="empty-orbit">✓</div>
+            <h3>No live conflicts.</h3>
+            <p>Competing VenueLoom and external calendar changes will appear here with both values and a protected resolution workflow.</p>
           </div>
-
-          <div className="comparison-grid">
-            <button className={resolution === "venueloom" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("venueloom")}>
-              <span>Keep VenueLoom</span>
-              <strong>6:00 PM</strong>
-              <small>Edited by venue manager · version 18</small>
-            </button>
-            <button className={resolution === "external" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("external")}>
-              <span>Use external CRM</span>
-              <strong>7:00 PM</strong>
-              <small>Dubsado project update · source version 9921</small>
-            </button>
-            <button className={resolution === "merged" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("merged")}>
-              <span>Merge manually</span>
-              <strong>Custom value</strong>
-              <small>Review related end time and reservation first</small>
-            </button>
-          </div>
-
-          <div className="conflict-impact">
-            <strong>Before resolution VenueLoom would re-check:</strong>
-            <span>reservation availability</span>
-            <span>setup/teardown buffers</span>
-            <span>calendar write-back policy</span>
-            <span>event version</span>
-          </div>
-
-          <button className="button disabled-button" disabled>
-            Resolve example — live conflict required
-          </button>
-        </div>
+        ) : (
+          conflicts.map((conflict) => <ConflictCard key={conflict.id} conflict={conflict} onResolved={() => void load()} />)
+        )}
       </div>
     </section>
   );
