@@ -161,9 +161,8 @@ export async function bootstrapFirstOrganization(
 
   return withTransaction(async (client) => {
     const userId = await resolveIdentity(client, identity);
-    const globalCount = await client.query<{ count: string }>("SELECT count(*)::text AS count FROM organizations");
-    if (Number(globalCount.rows[0]?.count ?? "0") > 0 && process.env.VENUELOOM_ALLOW_OWNER_BOOTSTRAP !== "true") {
-      throw new Error("Owner bootstrap is disabled. Invite this user to an organization.");
+    if (process.env.VENUELOOM_ALLOW_OWNER_BOOTSTRAP !== "true") {
+      throw new Error("Owner bootstrap is disabled. Enable VENUELOOM_ALLOW_OWNER_BOOTSTRAP only while creating an approved first workspace.");
     }
 
     const organizationId = randomUUID();
