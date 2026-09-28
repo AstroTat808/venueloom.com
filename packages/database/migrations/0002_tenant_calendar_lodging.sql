@@ -84,8 +84,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS clients_org_email_uq ON clients(organization_i
 CREATE TABLE IF NOT EXISTS inquiries (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  venue_id uuid REFERENCES venues(id) ON DELETE RESTRICT,
-  client_id uuid REFERENCES clients(id) ON DELETE RESTRICT,
+  venue_id uuid,
+  client_id uuid,
   name text NOT NULL,
   contact_email text,
   contact_phone text,
@@ -99,14 +99,16 @@ CREATE TABLE IF NOT EXISTS inquiries (
   custom_fields jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, venue_id) REFERENCES venues(organization_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (organization_id, client_id) REFERENCES clients(organization_id, id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS events (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  venue_id uuid NOT NULL REFERENCES venues(id) ON DELETE RESTRICT,
-  client_id uuid REFERENCES clients(id) ON DELETE RESTRICT,
+  venue_id uuid NOT NULL,
+  client_id uuid,
   name text NOT NULL,
   event_type text,
   starts_at timestamptz NOT NULL,
@@ -120,29 +122,33 @@ CREATE TABLE IF NOT EXISTS events (
   custom_fields jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, venue_id) REFERENCES venues(organization_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (organization_id, client_id) REFERENCES clients(organization_id, id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS reservations (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  venue_id uuid NOT NULL REFERENCES venues(id) ON DELETE RESTRICT,
-  event_id uuid REFERENCES events(id) ON DELETE RESTRICT,
+  venue_id uuid NOT NULL,
+  event_id uuid,
   starts_at timestamptz NOT NULL,
   ends_at timestamptz NOT NULL,
   state text NOT NULL CHECK (state IN ('held','confirmed','released','expired')),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (ends_at > starts_at),
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, venue_id) REFERENCES venues(organization_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (organization_id, event_id) REFERENCES events(organization_id, id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS reservations_venue_active_idx ON reservations(organization_id, venue_id, starts_at, ends_at) WHERE state IN ('held','confirmed');
 
 CREATE TABLE IF NOT EXISTS invoices (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  venue_id uuid REFERENCES venues(id) ON DELETE RESTRICT,
-  client_id uuid REFERENCES clients(id) ON DELETE RESTRICT,
+  venue_id uuid,
+  client_id uuid,
   document_number text NOT NULL,
   issued_date date,
   due_date date,
@@ -153,15 +159,17 @@ CREATE TABLE IF NOT EXISTS invoices (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, document_number),
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, venue_id) REFERENCES venues(organization_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (organization_id, client_id) REFERENCES clients(organization_id, id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS payments (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  venue_id uuid REFERENCES venues(id) ON DELETE RESTRICT,
-  client_id uuid REFERENCES clients(id) ON DELETE RESTRICT,
-  invoice_id uuid REFERENCES invoices(id) ON DELETE RESTRICT,
+  venue_id uuid,
+  client_id uuid,
+  invoice_id uuid,
   reference text,
   amount_minor bigint NOT NULL CHECK (amount_minor >= 0),
   currency text NOT NULL DEFAULT 'USD',
@@ -170,7 +178,10 @@ CREATE TABLE IF NOT EXISTS payments (
   status text NOT NULL DEFAULT 'paid',
   source text,
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, venue_id) REFERENCES venues(organization_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (organization_id, client_id) REFERENCES clients(organization_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (organization_id, invoice_id) REFERENCES invoices(organization_id, id) ON DELETE RESTRICT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS payments_org_reference_uq ON payments(organization_id, reference) WHERE reference IS NOT NULL;
 
@@ -215,12 +226,13 @@ ALTER TABLE import_runs ADD CONSTRAINT import_runs_source_type_check CHECK (sour
 CREATE TABLE IF NOT EXISTS integration_secret_envelopes (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  connection_id uuid REFERENCES integration_connections(id) ON DELETE CASCADE,
+  connection_id uuid,
   purpose text NOT NULL,
   ciphertext text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   rotated_at timestamptz,
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, connection_id) REFERENCES integration_connections(organization_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS oauth_states (
@@ -239,8 +251,8 @@ CREATE TABLE IF NOT EXISTS oauth_states (
 CREATE TABLE IF NOT EXISTS calendar_bindings (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  connection_id uuid NOT NULL REFERENCES integration_connections(id) ON DELETE CASCADE,
-  venue_id uuid NOT NULL REFERENCES venues(id) ON DELETE RESTRICT,
+  connection_id uuid NOT NULL,
+  venue_id uuid NOT NULL,
   provider_calendar_id text NOT NULL,
   provider_calendar_name text NOT NULL,
   sync_direction text NOT NULL CHECK (sync_direction IN ('inbound','outbound','two_way')),
@@ -258,14 +270,16 @@ CREATE TABLE IF NOT EXISTS calendar_bindings (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, id),
-  UNIQUE (organization_id, connection_id, provider_calendar_id)
+  UNIQUE (organization_id, connection_id, provider_calendar_id),
+  FOREIGN KEY (organization_id, connection_id) REFERENCES integration_connections(organization_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (organization_id, venue_id) REFERENCES venues(organization_id, id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS calendar_blocks (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  venue_id uuid NOT NULL REFERENCES venues(id) ON DELETE RESTRICT,
-  binding_id uuid NOT NULL REFERENCES calendar_bindings(id) ON DELETE CASCADE,
+  venue_id uuid NOT NULL,
+  binding_id uuid NOT NULL,
   external_event_id text NOT NULL,
   external_version text,
   title text,
@@ -279,15 +293,17 @@ CREATE TABLE IF NOT EXISTS calendar_blocks (
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (ends_at > starts_at),
   UNIQUE (organization_id, binding_id, external_event_id),
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, venue_id) REFERENCES venues(organization_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (organization_id, binding_id) REFERENCES calendar_bindings(organization_id, id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS calendar_blocks_venue_active_idx ON calendar_blocks(organization_id, venue_id, starts_at, ends_at) WHERE state='active';
 
 CREATE TABLE IF NOT EXISTS integration_sync_queue (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  binding_id uuid REFERENCES calendar_bindings(id) ON DELETE CASCADE,
-  feed_id uuid REFERENCES lodging_calendar_feeds(id) ON DELETE CASCADE,
+  binding_id uuid,
+  feed_id uuid,
   reason text NOT NULL,
   available_at timestamptz NOT NULL DEFAULT now(),
   leased_at timestamptz,
@@ -296,7 +312,9 @@ CREATE TABLE IF NOT EXISTS integration_sync_queue (
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK ((binding_id IS NOT NULL)::int + (feed_id IS NOT NULL)::int = 1),
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, binding_id) REFERENCES calendar_bindings(organization_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (organization_id, feed_id) REFERENCES lodging_calendar_feeds(organization_id, id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS integration_sync_queue_ready_idx
   ON integration_sync_queue(available_at, created_at)
@@ -305,7 +323,7 @@ CREATE INDEX IF NOT EXISTS integration_sync_queue_ready_idx
 CREATE TABLE IF NOT EXISTS sync_conflicts (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  connection_id uuid REFERENCES integration_connections(id) ON DELETE CASCADE,
+  connection_id uuid,
   object_type text NOT NULL,
   internal_id uuid,
   external_id text,
@@ -318,42 +336,46 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
   resolved_by uuid REFERENCES users(id) ON DELETE RESTRICT,
   resolved_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, connection_id) REFERENCES integration_connections(organization_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS lodging_units (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  venue_id uuid REFERENCES venues(id) ON DELETE RESTRICT,
+  venue_id uuid,
   name text NOT NULL,
   timezone text NOT NULL,
   blocks_venue_availability boolean NOT NULL DEFAULT false,
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, venue_id) REFERENCES venues(organization_id, id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS lodging_calendar_feeds (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  unit_id uuid NOT NULL REFERENCES lodging_units(id) ON DELETE CASCADE,
+  unit_id uuid NOT NULL,
   provider text NOT NULL CHECK (provider IN ('airbnb','vrbo')),
-  source_url_secret_id uuid NOT NULL REFERENCES integration_secret_envelopes(id) ON DELETE RESTRICT,
+  source_url_secret_id uuid NOT NULL,
   enabled boolean NOT NULL DEFAULT true,
   last_synced_at timestamptz,
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, id),
-  UNIQUE (organization_id, unit_id, provider)
+  UNIQUE (organization_id, unit_id, provider),
+  FOREIGN KEY (organization_id, unit_id) REFERENCES lodging_units(organization_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (organization_id, source_url_secret_id) REFERENCES integration_secret_envelopes(organization_id, id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS lodging_stays (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  unit_id uuid NOT NULL REFERENCES lodging_units(id) ON DELETE CASCADE,
-  feed_id uuid REFERENCES lodging_calendar_feeds(id) ON DELETE CASCADE,
+  unit_id uuid NOT NULL,
+  feed_id uuid,
   source_provider text NOT NULL CHECK (source_provider IN ('airbnb','vrbo','venueloom','manual')),
   external_uid text,
   starts_on date NOT NULL,
@@ -364,7 +386,9 @@ CREATE TABLE IF NOT EXISTS lodging_stays (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (ends_on > starts_on),
-  UNIQUE (organization_id, id)
+  UNIQUE (organization_id, id),
+  FOREIGN KEY (organization_id, unit_id) REFERENCES lodging_units(organization_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (organization_id, feed_id) REFERENCES lodging_calendar_feeds(organization_id, id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS lodging_stays_external_uq
   ON lodging_stays(organization_id, feed_id, external_uid)
@@ -376,13 +400,14 @@ CREATE INDEX IF NOT EXISTS lodging_stays_unit_active_idx
 CREATE TABLE IF NOT EXISTS lodging_export_tokens (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  unit_id uuid NOT NULL REFERENCES lodging_units(id) ON DELETE CASCADE,
+  unit_id uuid NOT NULL,
   target_provider text NOT NULL CHECK (target_provider IN ('airbnb','vrbo')),
   token_hash text NOT NULL UNIQUE,
   revoked_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, id),
-  UNIQUE (organization_id, unit_id, target_provider)
+  UNIQUE (organization_id, unit_id, target_provider),
+  FOREIGN KEY (organization_id, unit_id) REFERENCES lodging_units(organization_id, id) ON DELETE CASCADE
 );
 
 -- Public-calendar resolver intentionally returns only availability fields, never guest data.
