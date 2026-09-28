@@ -56,8 +56,7 @@ export const importProviderProfiles: ImportProviderProfile[] = [
       },
       invoices: {
         client_name: ["client name","client first name","client last name"],
-        client_email: ["client email"],
-        total_amount: ["primary invoice paid","all invoices paid"]
+        client_email: ["client email"]
       },
       payments: {
         client_name: ["client name","client first name","client last name"],
