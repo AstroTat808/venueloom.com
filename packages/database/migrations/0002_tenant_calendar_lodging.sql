@@ -494,6 +494,10 @@ CREATE POLICY membership_visibility ON memberships
   USING (user_id = app_user_id() OR organization_id = app_org_id())
   WITH CHECK (organization_id = app_org_id());
 
+CREATE UNIQUE INDEX IF NOT EXISTS external_mappings_calendar_internal_uq
+  ON external_mappings(organization_id, connection_id, object_type, internal_id)
+  WHERE object_type='calendar_event';
+
 -- Indexes that support membership resolution and sync workers.
 CREATE INDEX IF NOT EXISTS memberships_user_status_idx ON memberships(user_id, status, organization_id);
 CREATE INDEX IF NOT EXISTS calendar_bindings_sync_idx ON calendar_bindings(organization_id, sync_enabled, last_synced_at);
