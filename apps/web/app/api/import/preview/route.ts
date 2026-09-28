@@ -3,7 +3,7 @@ import {
   autoMapHeaders,
   createImportPreview,
   mappingCoverage,
-  parseWorkbook,
+  parseImportFile,
   validateImportFile,
   type FieldMapping,
   type ImportEntity
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
   try {
     validateImportFile(file.name, file.size);
-    const sheets = parseWorkbook(await file.arrayBuffer());
+    const sheets = await parseImportFile(file.name, await file.arrayBuffer());
     const requestedSheet = formData.get("sheet");
     const sheet =
       typeof requestedSheet === "string" && requestedSheet
