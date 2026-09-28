@@ -135,6 +135,28 @@ export const googleCalendarAdapter: CalendarProviderAdapter = {
     });
     return { id: result.id, version: result.etag };
   },
+  async createWatch({ tokens, calendarId, webhookUrl, verificationToken, channelId }) {
+    const expiration = Date.now() + 6 * 24 * 60 * 60 * 1000;
+    const result = await json<any>(
+      `${apiBase}/calendars/${encodeURIComponent(calendarId)}/events/watch`,
+      {
+        method: "POST",
+        headers: { ...auth(tokens), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: channelId,
+          type: "web_hook",
+          address: webhookUrl,
+          token: verificationToken,
+          expiration
+        })
+      }
+    );
+    return {
+      channelId: result.id ?? channelId,
+      resourceId: result.resourceId,
+      expiresAt: new Date(Number(result.expiration ?? expiration)).toISOString()
+    };
+  },
   async deleteEvent({ tokens, calendarId, externalEventId }) {
     const response = await fetch(`${apiBase}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(externalEventId)}`, {
       method: "DELETE", headers: auth(tokens)
