@@ -34,6 +34,13 @@ export interface PullResult {
   nextCursor: string | null;
 }
 
+export interface CalendarWatch {
+  channelId: string;
+  resourceId?: string;
+  tokenHash: string;
+  expiresAt: string;
+}
+
 export interface CalendarProviderAdapter {
   provider: CalendarProvider;
   authorizationUrl(input: {
@@ -75,6 +82,13 @@ export interface CalendarProviderAdapter {
       venueLoomEventId: string;
     };
   }): Promise<{ id: string; version?: string }>;
+  createWatch(input: {
+    tokens: OAuthTokenSet;
+    calendarId: string;
+    webhookUrl: string;
+    verificationToken: string;
+    channelId: string;
+  }): Promise<{ channelId: string; resourceId?: string; expiresAt: string }>;
   deleteEvent(input: {
     tokens: OAuthTokenSet;
     calendarId: string;
