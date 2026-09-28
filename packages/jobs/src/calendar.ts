@@ -446,7 +446,7 @@ export async function enqueueCalendarWebhook(input: {
   if (!binding) return false;
   if (binding.webhook_token_hash && binding.webhook_token_hash !== tokenHash) return false;
   await getServicePool().query(
-    "INSERT INTO integration_sync_queue(id,organization_id,binding_id,reason) VALUES ($1,$2,$3,'webhook')",
+    "INSERT INTO integration_sync_queue(id,organization_id,binding_id,reason) VALUES ($1,$2,$3,'webhook') ON CONFLICT DO NOTHING",
     [randomUUID(), binding.organization_id, binding.id]
   );
   return true;
@@ -462,7 +462,8 @@ export async function queueDueCalendarBindings(): Promise<number> {
     await getServicePool().query(
       `INSERT INTO integration_sync_queue(id,organization_id,binding_id,reason)
        SELECT $1,$2,$3,'reconcile'
-       WHERE NOT EXISTS (SELECT 1 FROM integration_sync_queue WHERE binding_id=$3 AND completed_at IS NULL)`,
+       WHERE NOT EXISTS (SELECT 1 FROM integration_sync_queue WHERE binding_id=$3 AND completed_at IS NULL)
+       ON CONFLICT DO NOTHING`,
       [randomUUID(), row.organization_id, row.id]
     );
   }
