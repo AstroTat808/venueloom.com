@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const base = requireRuntimeEnv("PUBLIC_APP_URL").replace(/\/$/, "");
     return NextResponse.json({
       feedId: connected.feedId,
-      exportUrl: `${base}/api/lodging/calendar/${connected.exportToken}`
+      exportUrl: `${base}/api/lodging/calendar/${connected.exportToken}.ics`
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to connect lodging calendar" }, { status: 400 });
