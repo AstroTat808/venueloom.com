@@ -95,7 +95,7 @@ export function LodgingSyncPanel({ venues }: { venues: Venue[] }) {
             <form className="auth-form compact-form" onSubmit={(event) => { event.preventDefault(); void connectFeed(event.currentTarget); }}>
               <label>House<select name="unitId" required><option value="">Choose house</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label>
               <label>Platform<select name="provider" defaultValue="airbnb"><option value="airbnb">Airbnb</option><option value="vrbo">Vrbo</option></select></label>
-              <label>Platform export iCal URL<input name="sourceUrl" type="url" placeholder="https://www.airbnb.com/calendar/ical/..." required /></label>
+              <label>Platform export iCal URL<input name="sourceUrl" type="text" inputMode="url" placeholder="https://www.airbnb.com/calendar/ical/... or webcal://..." required /></label>
               <button className="button primary" disabled={busy}>Connect calendar</button>
             </form>
           </div>
