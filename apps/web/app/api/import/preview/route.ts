@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     const providerProfile = detectImportProvider(sheet.headers);
     const coverage = mappingCoverage(entity as ImportEntity, mapping);
     const preview = coverage.canPreview
-      ? createImportPreview(entity as ImportEntity, sheet, mapping, { preserveUnmappedFields: providerProfile?.preserveUnmappedFields })
+      ? createImportPreview(entity as ImportEntity, sheet, mapping, { preserveUnmappedFields: providerProfile?.preserveUnmappedFields, providerProfileId: providerProfile?.id })
       : null;
 
     return NextResponse.json({
