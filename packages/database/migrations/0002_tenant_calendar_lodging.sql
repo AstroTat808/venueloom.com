@@ -219,6 +219,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS staff_org_email_uq ON staff_profiles(organizat
 -- Harden the integration/import tables introduced in 0001.
 ALTER TABLE import_runs ADD CONSTRAINT import_runs_org_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
 ALTER TABLE integration_connections ADD CONSTRAINT integration_connections_org_fk FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
+ALTER TABLE import_runs ADD CONSTRAINT import_runs_venue_fk
+  FOREIGN KEY (organization_id, venue_id) REFERENCES venues(organization_id, id) ON DELETE RESTRICT;
+ALTER TABLE import_runs ADD CONSTRAINT import_runs_created_by_fk
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT;
+ALTER TABLE integration_connections ADD CONSTRAINT integration_connections_authorized_by_fk
+  FOREIGN KEY (authorized_by) REFERENCES users(id) ON DELETE RESTRICT;
 
 ALTER TABLE import_runs DROP CONSTRAINT IF EXISTS import_runs_source_type_check;
 ALTER TABLE import_runs ADD CONSTRAINT import_runs_source_type_check CHECK (source_type IN ('csv','xlsx','provider'));
