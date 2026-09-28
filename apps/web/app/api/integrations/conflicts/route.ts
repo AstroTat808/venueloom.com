@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { listOpenSyncConflicts, withTenantTransaction } from "@venueloom/database";
-import { getTenantSession } from "../../../../lib/auth";
+import { getIntegrationAdminSession } from "../../../../lib/auth";
 
 export async function GET() {
-  const tenant = await getTenantSession();
-  if (!tenant) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  const tenant = await getIntegrationAdminSession();
+  if (!tenant) return NextResponse.json({ error: "Owner or admin access required." }, { status: 403 });
   const conflicts = await withTenantTransaction(
     tenant.identity,
     tenant.session.organizationId,
