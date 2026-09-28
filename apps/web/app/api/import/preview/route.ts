@@ -6,7 +6,8 @@ import {
   parseImportFile,
   validateImportFile,
   type FieldMapping,
-  type ImportEntity
+  type ImportEntity,
+  detectImportProvider
 } from "@venueloom/importer";
 
 export const runtime = "nodejs";
@@ -50,11 +51,12 @@ export async function POST(request: Request) {
     const mapping: FieldMapping =
       typeof rawMapping === "string" && rawMapping
         ? JSON.parse(rawMapping)
-        : autoMapHeaders(entity as ImportEntity, sheet.headers);
+        : autoMapHeaders(entity as ImportEntity, sheet.headers, detectImportProvider(sheet.headers));
 
+    const providerProfile = detectImportProvider(sheet.headers);
     const coverage = mappingCoverage(entity as ImportEntity, mapping);
     const preview = coverage.canPreview
-      ? createImportPreview(entity as ImportEntity, sheet, mapping)
+      ? createImportPreview(entity as ImportEntity, sheet, mapping, { preserveUnmappedFields: providerProfile?.preserveUnmappedFields })
       : null;
 
     return NextResponse.json({
@@ -63,6 +65,7 @@ export async function POST(request: Request) {
       selectedSheet: sheet.sheetName,
       entity,
       mapping,
+      detectedProvider: providerProfile ? { id: providerProfile.id, name: providerProfile.name } : null,
       coverage,
       preview
     });
