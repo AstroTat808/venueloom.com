@@ -51,7 +51,13 @@ function providerCredentials(provider: CalendarProvider) {
 }
 
 function hashEvent(input: { name: string; starts_at: string; ends_at: string; timezone: string; status: string }) {
-  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+  return createHash("sha256").update(JSON.stringify({
+    name: input.name,
+    starts_at: new Date(input.starts_at).toISOString(),
+    ends_at: new Date(input.ends_at).toISOString(),
+    timezone: input.timezone,
+    status: input.status
+  })).digest("hex");
 }
 
 async function loadBinding(bindingId: string): Promise<BindingRow> {
@@ -161,6 +167,17 @@ async function applyInbound(binding: BindingRow, external: ExternalCalendarEvent
     if (!event) return;
 
     if (external.cancelled) {
+      if (event.status === "cancelled") {
+        const cancelledHash = hashEvent(event);
+        await client.query(
+          `INSERT INTO external_mappings(id,organization_id,connection_id,object_type,external_id,internal_id,external_version,last_seen_hash,last_pulled_at)
+           VALUES ($1,$2,$3,'calendar_event',$4,$5,$6,$7,now())
+           ON CONFLICT (organization_id,connection_id,object_type,external_id)
+           DO UPDATE SET external_version=EXCLUDED.external_version,last_seen_hash=EXCLUDED.last_seen_hash,last_pulled_at=now(),updated_at=now()`,
+          [randomUUID(), binding.organization_id, binding.connection_id, external.id, event.id, external.version ?? null, cancelledHash]
+        );
+        return;
+      }
       await openConflict(client, binding, external, event.id, "status", event.status, "cancelled");
       return;
     }
@@ -233,7 +250,7 @@ async function pushOutbound(binding: BindingRow, tokens: OAuthTokenSet) {
        FROM events e
        LEFT JOIN external_mappings m
          ON m.organization_id=e.organization_id AND m.connection_id=$3 AND m.object_type='calendar_event' AND m.internal_id=e.id
-      WHERE e.organization_id=$1 AND e.venue_id=$2 AND e.status IN ('tentative','confirmed')
+      WHERE e.organization_id=$1 AND e.venue_id=$2 AND e.status IN ('tentative','confirmed','cancelled')
         AND e.ends_at>now()-interval '90 days' AND e.starts_at<now()+interval '730 days'`,
     [binding.organization_id, binding.venue_id, binding.connection_id]
   );
@@ -241,6 +258,24 @@ async function pushOutbound(binding: BindingRow, tokens: OAuthTokenSet) {
   for (const event of events.rows) {
     const localHash = hashEvent(event);
     if (event.last_seen_hash === localHash) continue;
+
+    if (event.status === "cancelled") {
+      if (event.external_id) {
+        await adapter.deleteEvent({
+          tokens,
+          calendarId: binding.provider_calendar_id,
+          externalEventId: event.external_id
+        });
+        await getServicePool().query(
+          `UPDATE external_mappings
+              SET last_seen_hash=$4,last_pushed_at=now(),updated_at=now()
+            WHERE organization_id=$1 AND connection_id=$2 AND object_type='calendar_event' AND external_id=$3`,
+          [binding.organization_id, binding.connection_id, event.external_id, localHash]
+        );
+      }
+      continue;
+    }
+
     const pushed = await adapter.upsertEvent({
       tokens,
       calendarId: binding.provider_calendar_id,
@@ -336,10 +371,13 @@ export async function enqueueCalendarWebhook(input: {
   const tokenHash = input.verificationToken
     ? createHash("sha256").update(input.verificationToken).digest("hex")
     : null;
+  const expectedProvider = input.provider === "google" ? "google-calendar" : "outlook-calendar";
   const result = await getServicePool().query<{ organization_id: string; id: string; webhook_token_hash: string | null }>(
-    `SELECT organization_id,id,webhook_token_hash FROM calendar_bindings
-      WHERE webhook_channel_id=$1 AND sync_enabled=true`,
-    [input.channelId]
+    `SELECT b.organization_id,b.id,b.webhook_token_hash
+       FROM calendar_bindings b
+       JOIN integration_connections c ON c.organization_id=b.organization_id AND c.id=b.connection_id
+      WHERE b.webhook_channel_id=$1 AND b.sync_enabled=true AND c.provider_code=$2 AND c.status='active'`,
+    [input.channelId, expectedProvider]
   );
   const binding = result.rows[0];
   if (!binding) return false;
