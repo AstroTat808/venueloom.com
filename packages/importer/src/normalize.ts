@@ -54,7 +54,18 @@ export function normalizeField(field: FieldDefinition, value: CellValue | undefi
     }
     case "date":
     case "datetime": {
-      const parsed = new Date(String(raw));
+      const text = String(raw).trim();
+      if (field.type === "datetime" && /^\d{4}-\d{2}-\d{2}$/.test(text)) {
+        return {
+          value: raw,
+          issue: {
+            field: field.key,
+            code: "invalid_date",
+            message: `${field.label} must include a time and UTC offset, for example 2026-12-31T18:00:00-10:00`
+          }
+        };
+      }
+      const parsed = new Date(text);
       if (Number.isNaN(parsed.getTime())) {
         return { value: raw, issue: { field: field.key, code: "invalid_date", message: `${field.label} is not a valid date` } };
       }
