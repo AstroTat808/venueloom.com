@@ -2,6 +2,7 @@ import { Pool, type PoolClient } from "@neondatabase/serverless";
 import { requireRuntimeEnv } from "./env";
 
 let pool: Pool | undefined;
+let servicePool: Pool | undefined;
 
 export function getPool(): Pool {
   if (!pool) {
@@ -13,6 +14,33 @@ export function getPool(): Pool {
     });
   }
   return pool;
+}
+
+export function getServicePool(): Pool {
+  if (!servicePool) {
+    servicePool = new Pool({
+      connectionString: requireRuntimeEnv("DATABASE_SERVICE_URL"),
+      max: 3,
+      idleTimeoutMillis: 10_000,
+      connectionTimeoutMillis: 10_000
+    });
+  }
+  return servicePool;
+}
+
+export async function withServiceTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getServicePool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
