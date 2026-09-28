@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderDefinition, ProviderCategory } from "@venueloom/integrations";
-import { importSchemas, type ImportEntity } from "@venueloom/importer";
+import { importSchemas } from "@venueloom/importer/schemas";
+import type { ImportEntity } from "@venueloom/importer/types";
 import { CalendarSyncPanel } from "./calendar-ui";
 import { LodgingSyncPanel } from "./lodging-ui";
 
