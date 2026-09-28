@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { verifyRequestOrigin } from "@netlify/identity";
 import { NextResponse } from "next/server";
 import { saveCalendarBinding, withTenantTransaction } from "@venueloom/database";
-import { getTenantSession } from "../../../../../lib/auth";
+import { getIntegrationAdminSession } from "../../../../../lib/auth";
 
 export async function POST(request: Request) {
   try {
     verifyRequestOrigin(request);
-    const tenant = await getTenantSession();
-    if (!tenant) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    const tenant = await getIntegrationAdminSession();
+    if (!tenant) return NextResponse.json({ error: "Owner or admin access required." }, { status: 403 });
     const body = await request.json();
     const direction = String(body.direction ?? "");
     if (!["inbound","outbound","two_way"].includes(direction)) {
