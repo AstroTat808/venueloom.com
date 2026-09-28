@@ -436,6 +436,12 @@ BEGIN
   END LOOP;
 END $$;
 
+-- A verified user may discover their own memberships before an organization is selected.
+DROP POLICY IF EXISTS tenant_isolation ON memberships;
+CREATE POLICY membership_visibility ON memberships
+  USING (user_id = app_user_id() OR organization_id = app_org_id())
+  WITH CHECK (organization_id = app_org_id());
+
 -- Indexes that support membership resolution and sync workers.
 CREATE INDEX IF NOT EXISTS memberships_user_status_idx ON memberships(user_id, status, organization_id);
 CREATE INDEX IF NOT EXISTS calendar_bindings_sync_idx ON calendar_bindings(organization_id, sync_enabled, last_synced_at);
