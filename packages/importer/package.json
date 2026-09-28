@@ -12,5 +12,8 @@
   "dependencies": {
     "csv-parse": "7.0.3",
     "read-excel-file": "9.3.10"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }
