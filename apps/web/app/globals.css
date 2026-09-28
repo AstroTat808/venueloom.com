@@ -83,7 +83,7 @@ a { color: inherit; text-decoration: none; }
 .metric-card strong { display: block; margin: 12px 0 5px; font-family: Georgia, serif; font-size: 30px; font-weight: 500; }
 .metric-card.wide strong { font-size: 21px; }
 
-.tabbar { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); margin-bottom: 30px; }
+.tabbar { display: grid; grid-template-columns: repeat(6, 1fr); border-bottom: 1px solid var(--line); margin-bottom: 30px; }
 .tab { text-align: left; border: 0; background: transparent; padding: 15px 15px 14px; color: var(--muted); border-bottom: 2px solid transparent; }
 .tab span { display: block; font-weight: 800; font-size: 12px; }
 .tab small { font-size: 10px; }
@@ -283,4 +283,161 @@ button:disabled { cursor: not-allowed; opacity: .65; }
 @media (max-width: 700px) {
   .comparison-grid { grid-template-columns: 1fr; }
   .conflict-demo-head { flex-direction: column; }
+}
+
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 15% 15%, rgba(46,111,106,.12), transparent 25rem),
+    radial-gradient(circle at 85% 5%, rgba(189,145,83,.12), transparent 22rem),
+    var(--ivory);
+}
+.auth-card {
+  width: min(460px, 100%);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: var(--shadow);
+}
+.wide-auth-card { width: min(620px, 100%); }
+.auth-brand {
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 28px;
+  padding: 0 0 20px;
+}
+.auth-brand .brand-mark { color: var(--gold); border-color: var(--line); }
+.auth-brand span { color: var(--muted); }
+.auth-card h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -.035em;
+  font-size: 38px;
+  line-height: 1;
+  margin: 10px 0 12px;
+}
+.auth-card > p { color: var(--muted); font-size: 11px; line-height: 1.65; }
+.auth-form { display: grid; gap: 12px; margin: 22px 0 12px; }
+.auth-form label { display: grid; gap: 6px; color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.auth-form input, .auth-form select, .commit-venue select, .external-calendar-row select {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 9px;
+  padding: 10px 11px;
+  color: var(--ink);
+  outline: none;
+}
+.auth-form input:focus, .auth-form select:focus, .commit-venue select:focus, .external-calendar-row select:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(46,111,106,.08);
+}
+.auth-toggle { width: 100%; text-align: center; margin-top: 9px; }
+.compact-form { margin: 0; }
+.provider-detected {
+  display: inline-flex;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: #e7e6f2;
+  color: #5b557e;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.commit-venue { display: grid; gap: 6px; margin: 14px 0; max-width: 360px; }
+.commit-venue > span { color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+
+.calendar-connect-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.connection-stack { display: grid; gap: 12px; }
+.connection-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+}
+.connection-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.connection-head h3 { margin: 6px 0 0; font-size: 15px; }
+.binding-list { display: grid; gap: 7px; margin-top: 14px; }
+.binding-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 11px;
+  border-radius: 9px;
+  background: #f2efe8;
+  font-size: 9px;
+}
+.binding-row strong, .binding-row span, .binding-row small { display: block; }
+.binding-row span, .binding-row small { color: var(--muted); margin-top: 3px; }
+.external-calendar-list { display: grid; gap: 7px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--line); }
+.external-calendar-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.4fr) minmax(130px, 1fr) minmax(125px, .8fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+}
+.external-calendar-row strong, .external-calendar-row span { display: block; }
+.external-calendar-row strong { font-size: 10px; }
+.external-calendar-row span { font-size: 8px; color: var(--muted); margin-top: 3px; }
+.external-calendar-row select { padding: 8px; font-size: 9px; }
+.inline-check {
+  display: flex !important;
+  grid-auto-flow: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px !important;
+  font-size: 9px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-weight: 600 !important;
+  color: var(--muted) !important;
+}
+.inline-check input { width: auto !important; margin: 0; box-shadow: none !important; }
+
+.lodging-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.unit-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; margin: 18px 0; }
+.lodging-unit-card { min-height: 200px; }
+.export-result {
+  background: #243232;
+  color: white;
+  border-radius: 14px;
+  padding: 20px;
+  margin: 16px 0;
+}
+.export-result h3 { font-family: Georgia, serif; font-weight: 500; margin: 8px 0 12px; }
+.export-result code {
+  display: block;
+  overflow-wrap: anywhere;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  font-size: 9px;
+}
+.export-result p { color: rgba(255,255,255,.65); font-size: 9px; line-height: 1.55; }
+
+@media (max-width: 1050px) {
+  .external-calendar-row { grid-template-columns: 1fr 1fr; }
+  .external-calendar-row > div { grid-column: 1 / -1; }
+  .unit-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 760px) {
+  .calendar-connect-actions { width: 100%; }
+  .calendar-connect-actions .button { flex: 1; text-align: center; }
+  .connection-head { align-items: flex-start; flex-direction: column; }
+  .external-calendar-row { grid-template-columns: 1fr; }
+  .external-calendar-row > div { grid-column: auto; }
+  .lodging-grid, .unit-grid { grid-template-columns: 1fr; }
+  .binding-row { flex-direction: column; }
 }
