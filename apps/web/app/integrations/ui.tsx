@@ -1,0 +1,663 @@
+"use client";
+
+import { useMemo, useRef, useState } from "react";
+import type { ProviderDefinition, ProviderCategory } from "@venueloom/integrations";
+import { importSchemas, type ImportEntity } from "@venueloom/importer";
+
+type DashboardTab = "catalog" | "migration" | "sync" | "conflicts";
+
+type PreviewResponse = {
+  error?: string;
+  file?: { name: string; size: number };
+  sheets?: Array<{ sheetName: string; rowCount: number; headers: string[] }>;
+  selectedSheet?: string;
+  entity?: ImportEntity;
+  mapping?: Record<string, string | null>;
+  coverage?: {
+    totalFields: number;
+    mappedFields: number;
+    requiredFields: number;
+    requiredMapped: number;
+    canPreview: boolean;
+  };
+  preview?: {
+    totals: { discovered: number; create: number; skip: number; error: number };
+    rows: Array<{
+      rowNumber: number;
+      normalized: Record<string, unknown>;
+      outcome: "create" | "skip" | "error";
+      issues: Array<{ message: string }>;
+    }>;
+  } | null;
+};
+
+const tabs: Array<{ id: DashboardTab; label: string; hint: string }> = [
+  { id: "catalog", label: "Integrations", hint: "Connect systems" },
+  { id: "migration", label: "Migration", hint: "Bring your data" },
+  { id: "sync", label: "Sync Center", hint: "Watch data flow" },
+  { id: "conflicts", label: "Conflicts", hint: "Resolve changes" }
+];
+
+const importEntities: Array<{ id: ImportEntity; label: string; description: string }> = [
+  { id: "clients", label: "Clients", description: "People and companies that book your venue." },
+  { id: "inquiries", label: "Inquiries", description: "Leads, projects and sales opportunities." },
+  { id: "events", label: "Events", description: "Booked and historical venue events." },
+  { id: "invoices", label: "Invoices", description: "Issued billing history and balances." },
+  { id: "payments", label: "Payments", description: "Received payment history and references." },
+  { id: "vendors", label: "Vendors", description: "Preferred and event-specific partners." },
+  { id: "staff", label: "Staff", description: "Venue team contacts and roles." }
+];
+
+const categoryLabels: Record<string, string> = {
+  all: "All",
+  crm: "CRM",
+  accounting: "Accounting",
+  calendar: "Calendar",
+  email: "Email",
+  payments: "Payments",
+  marketing: "Marketing",
+  automation: "Automation",
+  scheduling: "Scheduling",
+  documents: "Documents",
+  storage: "Storage",
+  communications: "Communications",
+  data: "Data",
+  venue: "Venue systems"
+};
+
+function implementationLabel(provider: ProviderDefinition) {
+  switch (provider.implementation) {
+    case "ready": return "Ready";
+    case "foundation": return "Foundation";
+    case "bridge": return "Bridge";
+    case "migration": return "Migration";
+    default: return "Planned";
+  }
+}
+
+function formatObject(object: string) {
+  return object.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatMode(mode: string) {
+  if (mode === "two_way") return "Two-way";
+  if (mode === "inbound") return "Into VenueLoom";
+  if (mode === "outbound") return "From VenueLoom";
+  return "Migration";
+}
+
+export function IntegrationsDashboard({ providers }: { providers: ProviderDefinition[] }) {
+  const [tab, setTab] = useState<DashboardTab>("catalog");
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<string>("all");
+  const [selectedProvider, setSelectedProvider] = useState<ProviderDefinition | null>(null);
+
+  const categories = useMemo(
+    () => ["all", ...Array.from(new Set(providers.map((provider) => provider.category)))],
+    [providers]
+  );
+
+  const filteredProviders = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return providers.filter((provider) => {
+      const categoryMatch = category === "all" || provider.category === category;
+      const queryMatch =
+        !normalized ||
+        provider.name.toLowerCase().includes(normalized) ||
+        provider.description.toLowerCase().includes(normalized) ||
+        provider.capabilities.some((capability) => capability.object.includes(normalized));
+      return categoryMatch && queryMatch;
+    });
+  }, [providers, category, query]);
+
+  const readyCount = providers.filter((provider) => ["ready", "foundation", "bridge", "migration"].includes(provider.implementation)).length;
+  const twoWayCount = providers.filter((provider) => provider.capabilities.some((capability) => capability.modes.includes("two_way"))).length;
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">V</div>
+          <div>
+            <strong>VenueLoom</strong>
+            <span>Venue OS</span>
+          </div>
+        </div>
+
+        <nav className="primary-nav" aria-label="VenueLoom">
+          <a href="#overview">Overview</a>
+          <a href="#calendar">Calendar</a>
+          <a href="#sales">Sales & CRM</a>
+          <a href="#events">Events</a>
+          <a href="#finance">Finance</a>
+          <a href="#team">Team</a>
+          <a href="#reports">Reports</a>
+          <a className="active" href="/integrations">Integrations</a>
+        </nav>
+
+        <div className="sidebar-foot">
+          <div className="workspace-avatar">KE</div>
+          <div>
+            <strong>Koa's Events</strong>
+            <span>Organization workspace</span>
+          </div>
+        </div>
+      </aside>
+
+      <main className="main">
+        <header className="topbar">
+          <div className="eyebrow">Settings / Integrations & Migration</div>
+          <div className="top-actions">
+            <button className="icon-button" aria-label="Help">?</button>
+            <div className="user-avatar">CS</div>
+          </div>
+        </header>
+
+        <section className="hero-panel">
+          <div>
+            <span className="pill pill-gold">Connected business, without the hard cutover</span>
+            <h1>Bring your business with you.</h1>
+            <p>
+              Migrate historical data, keep the systems you still need, and let VenueLoom become the operating layer
+              at your pace.
+            </p>
+            <div className="hero-actions">
+              <button className="button primary" onClick={() => setTab("migration")}>Start a migration</button>
+              <button className="button secondary" onClick={() => setTab("catalog")}>Browse integrations</button>
+            </div>
+          </div>
+          <div className="hero-metric-grid">
+            <div className="metric-card">
+              <span>Integration catalog</span>
+              <strong>{providers.length}</strong>
+              <small>providers & migration paths</small>
+            </div>
+            <div className="metric-card">
+              <span>Two-way candidates</span>
+              <strong>{twoWayCount}</strong>
+              <small>capability-gated providers</small>
+            </div>
+            <div className="metric-card wide">
+              <span>Onboarding philosophy</span>
+              <strong>No forced cutover</strong>
+              <small>Migration, one-way, or two-way per object.</small>
+            </div>
+          </div>
+        </section>
+
+        <div className="tabbar" role="tablist">
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              className={tab === item.id ? "tab active" : "tab"}
+              onClick={() => setTab(item.id)}
+              role="tab"
+              aria-selected={tab === item.id}
+            >
+              <span>{item.label}</span>
+              <small>{item.hint}</small>
+            </button>
+          ))}
+        </div>
+
+        {tab === "catalog" && (
+          <section className="content-section">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Integration catalog</span>
+                <h2>Connect what your team already uses.</h2>
+                <p>{readyCount} providers already have a migration, bridge, or connector foundation defined.</p>
+              </div>
+              <div className="search-wrap">
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search QuickBooks, calendar, payments..."
+                  aria-label="Search integrations"
+                />
+              </div>
+            </div>
+
+            <div className="category-row">
+              {categories.map((item) => (
+                <button
+                  key={item}
+                  onClick={() => setCategory(item)}
+                  className={category === item ? "chip active" : "chip"}
+                >
+                  {categoryLabels[item] ?? item}
+                </button>
+              ))}
+            </div>
+
+            <div className="provider-grid">
+              {filteredProviders.map((provider) => {
+                const hasTwoWay = provider.capabilities.some((capability) => capability.modes.includes("two_way"));
+                return (
+                  <article className="provider-card" key={provider.id}>
+                    <div className="provider-card-top">
+                      <div className="provider-logo">{provider.shortName}</div>
+                      <div className="provider-status-wrap">
+                        <span className={`status status-${provider.implementation}`}>
+                          {implementationLabel(provider)}
+                        </span>
+                        {hasTwoWay && <span className="status status-two-way">2-way</span>}
+                      </div>
+                    </div>
+                    <h3>{provider.name}</h3>
+                    <p>{provider.description}</p>
+                    <div className="capability-list">
+                      {provider.capabilities.slice(0, 4).map((capability) => (
+                        <span key={`${provider.id}-${capability.object}`}>
+                          {formatObject(capability.object)}
+                        </span>
+                      ))}
+                      {provider.capabilities.length > 4 && <span>+{provider.capabilities.length - 4}</span>}
+                    </div>
+                    <div className="provider-card-foot">
+                      <small>Wave {provider.launchWave} · {provider.connectionMethod.replaceAll("_", " ")}</small>
+                      <button className="text-button" onClick={() => setSelectedProvider(provider)}>
+                        {provider.id === "generic-file" ? "Import" : "View setup"} →
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {tab === "migration" && <MigrationWizard />}
+
+        {tab === "sync" && <SyncCenter providers={providers} />}
+
+        {tab === "conflicts" && <ConflictCenter />}
+
+        {selectedProvider && (
+          <div className="drawer-backdrop" role="presentation" onClick={() => setSelectedProvider(null)}>
+            <aside className="provider-drawer" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+              <div className="drawer-head">
+                <div className="provider-logo large">{selectedProvider.shortName}</div>
+                <button className="icon-button" onClick={() => setSelectedProvider(null)} aria-label="Close">×</button>
+              </div>
+              <span className="eyebrow">{categoryLabels[selectedProvider.category]}</span>
+              <h2>{selectedProvider.name}</h2>
+              <p>{selectedProvider.description}</p>
+
+              <div className="detail-block">
+                <span>Connection path</span>
+                <strong>{selectedProvider.connectionMethod.replaceAll("_", " ")}</strong>
+              </div>
+              <div className="detail-block">
+                <span>Implementation</span>
+                <strong>{implementationLabel(selectedProvider)}</strong>
+              </div>
+
+              <h3>Supported direction by object</h3>
+              <div className="direction-table">
+                {selectedProvider.capabilities.map((capability) => (
+                  <div key={capability.object}>
+                    <strong>{formatObject(capability.object)}</strong>
+                    <span>{capability.modes.map(formatMode).join(" · ")}</span>
+                  </div>
+                ))}
+              </div>
+
+              {selectedProvider.notes && <div className="notice amber">{selectedProvider.notes}</div>}
+
+              {selectedProvider.id === "generic-file" ? (
+                <button className="button primary full" onClick={() => { setSelectedProvider(null); setTab("migration"); }}>
+                  Start file migration
+                </button>
+              ) : (
+                <div className="notice">
+                  Connector UI is staged from this capability definition. OAuth/API credentials are not requested until
+                  that provider adapter is implemented and security-tested.
+                </div>
+              )}
+            </aside>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function MigrationWizard() {
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [entity, setEntity] = useState<ImportEntity>("clients");
+  const [file, setFile] = useState<File | null>(null);
+  const [result, setResult] = useState<PreviewResponse | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string | null>>({});
+  const [selectedSheet, setSelectedSheet] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function preview(nextMapping?: Record<string, string | null>, sheetOverride?: string) {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("entity", entity);
+      const sheet = sheetOverride ?? selectedSheet;
+      if (sheet) form.append("sheet", sheet);
+      if (nextMapping) form.append("mapping", JSON.stringify(nextMapping));
+      const response = await fetch("/api/import/preview", { method: "POST", body: form });
+      const json = (await response.json()) as PreviewResponse;
+      setResult(json);
+      if (json.mapping) setMapping(json.mapping);
+      if (json.selectedSheet) setSelectedSheet(json.selectedSheet);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function chooseFile(nextFile: File | null) {
+    setFile(nextFile);
+    setResult(null);
+    setMapping({});
+    setSelectedSheet("");
+  }
+
+  return (
+    <section className="content-section">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Migration studio</span>
+          <h2>Preview everything before VenueLoom writes anything.</h2>
+          <p>Upload CSV, XLSX, or XLS. VenueLoom maps common columns automatically and flags uncertain rows for review.</p>
+        </div>
+        <span className="secure-badge">Private · dry-run first</span>
+      </div>
+
+      <div className="wizard-grid">
+        <div className="wizard-main">
+          <div className="step-card">
+            <div className="step-number">1</div>
+            <div className="step-body">
+              <h3>What are you importing?</h3>
+              <div className="entity-grid">
+                {importEntities.map((item) => (
+                  <button
+                    key={item.id}
+                    className={entity === item.id ? "entity-card active" : "entity-card"}
+                    onClick={() => { setEntity(item.id); setResult(null); setMapping({}); }}
+                  >
+                    <strong>{item.label}</strong>
+                    <span>{item.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="step-card">
+            <div className="step-number">2</div>
+            <div className="step-body">
+              <h3>Choose your export file</h3>
+              <button className="drop-zone" onClick={() => fileInput.current?.click()}>
+                <span className="upload-icon">↑</span>
+                <strong>{file ? file.name : "Choose CSV / XLSX / XLS"}</strong>
+                <small>{file ? `${(file.size / 1024).toFixed(1)} KB selected` : "Up to 10 MB and 25,000 rows per sheet"}</small>
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                hidden
+                onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
+              />
+              {file && (
+                <button className="button primary" disabled={busy} onClick={() => void preview()}>
+                  {busy ? "Analyzing…" : "Analyze & auto-map"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {result?.sheets && result.sheets.length > 1 && (
+            <div className="step-card">
+              <div className="step-number">3</div>
+              <div className="step-body">
+                <h3>Select worksheet</h3>
+                <div className="sheet-row">
+                  {result.sheets.map((sheet) => (
+                    <button
+                      key={sheet.sheetName}
+                      className={selectedSheet === sheet.sheetName ? "chip active" : "chip"}
+                      onClick={() => {
+                        setSelectedSheet(sheet.sheetName);
+                        void preview(undefined, sheet.sheetName);
+                      }}
+                    >
+                      {sheet.sheetName} · {sheet.rowCount}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {result?.mapping && result.sheets && (
+            <div className="step-card">
+              <div className="step-number">{result.sheets.length > 1 ? "4" : "3"}</div>
+              <div className="step-body">
+                <div className="mapping-head">
+                  <div>
+                    <h3>Confirm field mapping</h3>
+                    <p>VenueLoom guessed the best match. Change any mapping before running the dry run.</p>
+                  </div>
+                  <span className={result.coverage?.canPreview ? "secure-badge" : "warning-badge"}>
+                    {result.coverage?.mappedFields}/{result.coverage?.totalFields} mapped
+                  </span>
+                </div>
+                <div className="mapping-table">
+                  {importSchemas[entity].map((field) => {
+                    const sheet = result.sheets?.find((item) => item.sheetName === selectedSheet) ?? result.sheets?.[0];
+                    return (
+                      <label key={field.key}>
+                        <span>
+                          <strong>{field.label}</strong>
+                          {field.required && <small>Required</small>}
+                        </span>
+                        <select
+                          value={mapping[field.key] ?? ""}
+                          onChange={(event) => setMapping((current) => ({
+                            ...current,
+                            [field.key]: event.target.value || null
+                          }))}
+                        >
+                          <option value="">Do not import</option>
+                          {sheet?.headers.map((header) => <option key={header} value={header}>{header}</option>)}
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+                <button className="button primary" disabled={busy} onClick={() => void preview(mapping)}>
+                  {busy ? "Running dry run…" : "Run dry run"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {result?.preview && (
+            <div className="step-card">
+              <div className="step-number">{result.sheets && result.sheets.length > 1 ? "5" : "4"}</div>
+              <div className="step-body">
+                <h3>Dry-run results</h3>
+                <div className="summary-grid">
+                  <Summary label="Discovered" value={result.preview.totals.discovered} />
+                  <Summary label="Ready to create" value={result.preview.totals.create} tone="good" />
+                  <Summary label="Duplicates skipped" value={result.preview.totals.skip} tone="neutral" />
+                  <Summary label="Needs attention" value={result.preview.totals.error} tone="bad" />
+                </div>
+
+                <div className="preview-table-wrap">
+                  <table className="preview-table">
+                    <thead>
+                      <tr>
+                        <th>Row</th>
+                        <th>Outcome</th>
+                        <th>Primary data</th>
+                        <th>Review</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.preview.rows.slice(0, 50).map((row) => (
+                        <tr key={row.rowNumber}>
+                          <td>{row.rowNumber}</td>
+                          <td><span className={`row-outcome ${row.outcome}`}>{row.outcome}</span></td>
+                          <td>
+                            {Object.entries(row.normalized)
+                              .filter(([, value]) => value !== null && value !== "")
+                              .slice(0, 3)
+                              .map(([key, value]) => <span className="data-token" key={key}>{formatObject(key)}: {String(value)}</span>)}
+                          </td>
+                          <td>{row.issues.length ? row.issues.map((issue) => issue.message).join(" · ") : "Ready"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {result.preview.rows.length > 50 && (
+                  <p className="table-note">Showing the first 50 rows of {result.preview.rows.length}.</p>
+                )}
+
+                <div className="notice amber">
+                  Import commit is intentionally locked until authenticated organization context and the PostgreSQL migration are active.
+                  This prevents an upload from writing into the wrong venue or organization.
+                </div>
+                <button className="button disabled-button" disabled>Commit migration — authentication required</button>
+              </div>
+            </div>
+          )}
+
+          {result?.error && <div className="notice error">{result.error}</div>}
+        </div>
+
+        <aside className="wizard-aside">
+          <div className="aside-card">
+            <span className="eyebrow">Safe migration</span>
+            <h3>Nothing is written during preview.</h3>
+            <ul>
+              <li>Headers are auto-matched, then confirmed by you.</li>
+              <li>Amounts become integer cents to preserve financial precision.</li>
+              <li>Likely duplicates are skipped, not silently merged.</li>
+              <li>Invalid dates, emails and numbers are surfaced row-by-row.</li>
+              <li>Bookings will still pass VenueLoom conflict checks when commit is enabled.</li>
+            </ul>
+          </div>
+          <div className="aside-card soft">
+            <span className="eyebrow">Built for messy exports</span>
+            <p>Provider-specific templates can sit on top of this same engine without creating a second importer.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function Summary({ label, value, tone = "plain" }: { label: string; value: number; tone?: string }) {
+  return (
+    <div className={`summary-card ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function SyncCenter({ providers }: { providers: ProviderDefinition[] }) {
+  const examples = [
+    { provider: "QuickBooks Online", object: "Invoices", direction: "VenueLoom → QBO", status: "Ready for adapter", count: "—" },
+    { provider: "Google Calendar", object: "Events", direction: "↔ Two-way", status: "Ready for OAuth", count: "—" },
+    { provider: "Dubsado", object: "Leads", direction: "Dubsado → VenueLoom", status: "Bridge planned", count: "—" },
+    { provider: "CSV / XLSX", object: "All import types", direction: "File → VenueLoom", status: "Preview engine ready", count: "7 types" }
+  ];
+
+  return (
+    <section className="content-section">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Sync Center</span>
+          <h2>One place to see every data movement.</h2>
+          <p>Live run history appears here once a provider is authorized. Current rows show the connector foundation state.</p>
+        </div>
+        <span className="secure-badge">{providers.length} catalog providers</span>
+      </div>
+
+      <div className="sync-overview">
+        <div className="sync-health-card">
+          <span>Connection health</span>
+          <strong>Not configured</strong>
+          <small>No production credentials are stored.</small>
+        </div>
+        <div className="sync-health-card">
+          <span>Failed records</span>
+          <strong>0</strong>
+          <small>Dead-letter queues begin with live adapters.</small>
+        </div>
+        <div className="sync-health-card">
+          <span>Open conflicts</span>
+          <strong>0</strong>
+          <small>Protected-field conflicts require review.</small>
+        </div>
+      </div>
+
+      <div className="sync-table">
+        <div className="sync-table-head">
+          <span>Provider</span><span>Object</span><span>Direction</span><span>State</span><span>Records</span>
+        </div>
+        {examples.map((row) => (
+          <div className="sync-table-row" key={row.provider + row.object}>
+            <strong>{row.provider}</strong>
+            <span>{row.object}</span>
+            <span>{row.direction}</span>
+            <span className="sync-state">{row.status}</span>
+            <span>{row.count}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ConflictCenter() {
+  return (
+    <section className="content-section">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">Conflict resolution</span>
+          <h2>Protected changes never disappear into “last write wins.”</h2>
+          <p>VenueLoom will queue concurrent edits to booking dates, issued invoices, payments and executed contracts for explicit review.</p>
+        </div>
+        <span className="secure-badge">0 live conflicts</span>
+      </div>
+
+      <div className="empty-state">
+        <div className="empty-orbit">✓</div>
+        <h3>No conflicts to resolve.</h3>
+        <p>When integrations are connected, competing VenueLoom and provider edits will appear here with both values, timestamps and source versions.</p>
+        <div className="conflict-example">
+          <div>
+            <span>Example protected field</span>
+            <strong>Event start time</strong>
+          </div>
+          <div>
+            <span>VenueLoom</span>
+            <strong>6:00 PM</strong>
+          </div>
+          <div>
+            <span>External CRM</span>
+            <strong>7:00 PM</strong>
+          </div>
+          <div>
+            <span>Resolution</span>
+            <strong>Manual review</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
