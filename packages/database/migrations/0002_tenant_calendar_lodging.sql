@@ -226,6 +226,9 @@ ALTER TABLE import_runs ADD CONSTRAINT import_runs_created_by_fk
 ALTER TABLE integration_connections ADD CONSTRAINT integration_connections_authorized_by_fk
   FOREIGN KEY (authorized_by) REFERENCES users(id) ON DELETE RESTRICT;
 
+ALTER TABLE import_runs ADD COLUMN IF NOT EXISTS update_count integer NOT NULL DEFAULT 0 CHECK (update_count >= 0);
+ALTER TABLE import_runs ADD COLUMN IF NOT EXISTS conflict_count integer NOT NULL DEFAULT 0 CHECK (conflict_count >= 0);
+
 ALTER TABLE import_runs DROP CONSTRAINT IF EXISTS import_runs_source_type_check;
 ALTER TABLE import_runs ADD CONSTRAINT import_runs_source_type_check CHECK (source_type IN ('csv','xlsx','provider'));
 
