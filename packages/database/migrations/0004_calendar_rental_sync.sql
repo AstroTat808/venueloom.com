@@ -168,6 +168,8 @@ CREATE OR REPLACE FUNCTION venueloom_resolve_rental_feed(p_token_hash text)
 RETURNS TABLE (
   organization_id uuid,
   venue_calendar_id uuid,
+  connection_id uuid,
+  provider_code text,
   listing_name text,
   timezone text
 )
@@ -175,7 +177,7 @@ LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT r.organization_id, r.venue_calendar_id, r.listing_name, vc.timezone
+  SELECT r.organization_id, r.venue_calendar_id, r.connection_id, r.provider_code, r.listing_name, vc.timezone
   FROM rental_calendar_links r
   JOIN venue_calendars vc
     ON vc.organization_id = r.organization_id AND vc.id = r.venue_calendar_id
