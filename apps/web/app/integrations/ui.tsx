@@ -19,6 +19,7 @@ type PreviewResponse = {
   file?: { name: string; size: number };
   sheets?: Array<{ sheetName: string; rowCount: number; headers: string[] }>;
   selectedSheet?: string;
+  providerProfile?: { id: string; name: string | null } | null;
   entity?: ImportEntity;
   mapping?: Record<string, string | null>;
   coverage?: {
@@ -317,14 +318,26 @@ export function IntegrationsDashboard({ providers, workspace }: { providers: Pro
                 <button className="button primary full" onClick={() => { setSelectedProvider(null); setTab("migration"); }}>
                   Start file migration
                 </button>
+              ) : selectedProvider.id === "google-calendar" ? (
+                <a className="button primary full button-link" href="/api/integrations/calendar/connect/google">
+                  Connect Google Calendar
+                </a>
+              ) : selectedProvider.id === "outlook-calendar" ? (
+                <a className="button primary full button-link" href="/api/integrations/calendar/connect/microsoft">
+                  Connect Outlook Calendar
+                </a>
+              ) : selectedProvider.id === "airbnb" || selectedProvider.id === "vrbo" ? (
+                <a className="button primary full button-link" href={`/integrations/rentals?provider=${selectedProvider.id}`}>
+                  Connect {selectedProvider.name} house calendar
+                </a>
               ) : (
                 <>
                   <button className="button secondary full" disabled>
                     Connect {selectedProvider.name} — adapter activation pending
                   </button>
                   <div className="notice">
-                    The Connect control is intentionally locked until this provider's OAuth/API adapter is implemented and
-                    security-tested. The capability drawer shows exactly what will be eligible for sync when activated.
+                    This provider remains capability-defined but is not yet credential-enabled. VenueLoom will not request
+                    credentials until its adapter has passed the provider-specific release gates.
                   </div>
                 </>
               )}
@@ -454,7 +467,7 @@ function MigrationWizard({ workspace }: { workspace: WorkspaceSummary }) {
               <input
                 ref={fileInput}
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,.xlsx"
                 hidden
                 onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
               />
@@ -493,6 +506,11 @@ function MigrationWizard({ workspace }: { workspace: WorkspaceSummary }) {
             <div className="step-card">
               <div className="step-number">{result.sheets.length > 1 ? "4" : "3"}</div>
               <div className="step-body">
+                {result.providerProfile && (
+                  <div className="notice provider-detected">
+                    <strong>{result.providerProfile.name} export detected.</strong> VenueLoom added provider-specific normalized fields before auto-mapping.
+                  </div>
+                )}
                 <div className="mapping-head">
                   <div>
                     <h3>Confirm field mapping</h3>
