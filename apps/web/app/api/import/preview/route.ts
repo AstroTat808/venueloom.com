@@ -10,7 +10,7 @@ import {
   type ImportEntity,
   detectImportProvider
 } from "@venueloom/importer";
-import { getTenantSession } from "../../../../lib/auth";
+import { getIntegrationAdminSession } from "../../../../lib/auth";
 
 export const runtime = "nodejs";
 
@@ -30,8 +30,8 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Request origin is not allowed." }, { status: 403 });
   }
-  const tenant = await getTenantSession();
-  if (!tenant) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  const tenant = await getIntegrationAdminSession();
+  if (!tenant) return NextResponse.json({ error: "Owner or admin access required." }, { status: 403 });
 
   const formData = await request.formData();
   const file = formData.get("file");
