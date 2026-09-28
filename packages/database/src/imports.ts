@@ -134,17 +134,52 @@ async function writeTarget(
     const clientId = await ensureClient(client, principal, row);
     const venue = principal.venues.find((item) => item.id === venueId);
     const id = randomUUID();
+    const startDate = new Date(start!);
+    const endValue = text(row.ends_at);
+    const endDate = endValue ? new Date(endValue) : new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+    const historical = startDate.getTime() < Date.now();
+
+    const venueCalendar = await client.query<{ id: string }>(
+      `SELECT id FROM venue_calendars
+        WHERE organization_id=$1 AND venue_id=$2 AND resource_kind='venue' AND active=true
+        ORDER BY created_at LIMIT 1`,
+      [principal.organizationId, venueId]
+    );
+    const venueCalendarId = venueCalendar.rows[0]?.id ?? null;
+
+    if (!historical && venueCalendarId) {
+      const conflict = await client.query<{ id: string }>(
+        `SELECT id FROM calendar_blocks
+          WHERE organization_id=$1 AND venue_calendar_id=$2 AND status <> 'cancelled'
+            AND starts_at < $4::timestamptz AND ends_at > $3::timestamptz
+          LIMIT 1`,
+        [principal.organizationId, venueCalendarId, startDate, endDate]
+      );
+      if (conflict.rows[0]) {
+        throw new Error("Future event conflicts with an existing VenueLoom or connected-calendar availability block.");
+      }
+    }
+
     await client.query(
       `INSERT INTO events (
         id, organization_id, venue_id, client_id, name, event_type, starts_at, ends_at,
         timezone, guest_count, booking_minor, status, source, historical_import
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'migration',true)`,
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'migration',$13)`,
       [
         id, principal.organizationId, venueId, clientId, eventName, text(row.event_type),
-        start, text(row.ends_at), venue?.timezone ?? "UTC", num(row.guest_count),
-        num(row.booking_amount), text(row.status) ?? "tentative"
+        startDate, endValue ? endDate : null, venue?.timezone ?? "UTC", num(row.guest_count),
+        num(row.booking_amount), text(row.status) ?? "tentative", historical
       ]
     );
+
+    if (!historical && venueCalendarId) {
+      await client.query(
+        `INSERT INTO calendar_blocks (
+          id, organization_id, venue_calendar_id, source_type, summary, starts_at, ends_at, status
+        ) VALUES ($1,$2,$3,'venueloom',$4,$5,$6,'busy')`,
+        [randomUUID(), principal.organizationId, venueCalendarId, eventName, startDate, endDate]
+      );
+    }
     return { targetId: id, outcome: "create" };
   }
 
