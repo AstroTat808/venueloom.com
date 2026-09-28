@@ -1,0 +1,12 @@
+{
+  "name": "@venueloom/importer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}
