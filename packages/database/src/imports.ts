@@ -20,6 +20,21 @@ function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function normalizeInquiryStatus(value: unknown): {
+  status: "new" | "contacted" | "tour_scheduled" | "proposal_sent" | "booked" | "lost";
+  sourceStatus?: string;
+} {
+  const raw = text(value);
+  if (!raw) return { status: "new" };
+  const normalized = raw.toLowerCase().replace(/[_-]+/g, " ").trim();
+  if (/\b(booked|won|confirmed|contracted)\b/.test(normalized)) return { status: "booked", sourceStatus: raw };
+  if (/\b(proposal|quote|estimate)\b/.test(normalized)) return { status: "proposal_sent", sourceStatus: raw };
+  if (/\b(tour|walkthrough|walk through|site visit)\b/.test(normalized)) return { status: "tour_scheduled", sourceStatus: raw };
+  if (/\b(contacted|follow up|followup|conversation)\b/.test(normalized)) return { status: "contacted", sourceStatus: raw };
+  if (/\b(lost|declined|dead|archived|cancelled|canceled)\b/.test(normalized)) return { status: "lost", sourceStatus: raw };
+  return { status: "new", sourceStatus: raw };
+}
+
 async function upsertClient(
   client: PoolClient,
   organizationId: string,
@@ -113,6 +128,11 @@ async function commitTarget(
     const clientResult = await upsertClient(client, org, row, source);
     const clientId = clientResult?.id ?? null;
     const id = randomUUID();
+    const inquiryStatus = normalizeInquiryStatus(row.status);
+    const customFields = {
+      ...((row.custom_fields && typeof row.custom_fields === "object") ? row.custom_fields as Record<string, unknown> : {}),
+      ...(inquiryStatus.sourceStatus ? { source_status: inquiryStatus.sourceStatus } : {})
+    };
     await client.query(
       `INSERT INTO inquiries(id,organization_id,venue_id,client_id,name,contact_email,contact_phone,event_type,proposed_date,guests,estimated_minor,currency,source,status,custom_fields)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'USD',$12,$13,$14)`,
@@ -120,7 +140,7 @@ async function commitTarget(
         id, org, venueId, clientId, text(row.event_name) ?? text(row.name) ?? "Imported inquiry",
         text(row.email), text(row.phone), text(row.event_type), text(row.proposed_date),
         numberValue(row.guest_count), numberValue(row.estimated_amount), text(row.source) ?? source,
-        text(row.status) ?? "new", row.custom_fields ?? {}
+        inquiryStatus.status, customFields
       ]
     );
     return { targetId: id, outcome: "create" };
