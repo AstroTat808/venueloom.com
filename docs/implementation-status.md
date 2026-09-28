@@ -8,7 +8,7 @@ Architecture-first initialization is complete and application implementation has
 - Branded Integrations & Migration dashboard UI.
 - Searchable provider catalog with 30+ CRM, accounting, calendar, email, payment, marketing, automation, scheduling, document, storage, communications, data and venue-system entries.
 - Capability metadata per provider so migration, inbound, outbound and two-way modes are represented per object rather than globally.
-- Generic CSV/XLS/XLSX migration engine for clients, inquiries, events, invoices, payments, vendors and staff.
+- Generic CSV/XLSX migration engine for clients, inquiries, events, invoices, payments, vendors and staff.
 - File-size and row-count limits.
 - Header auto-mapping and mapping coverage checks.
 - Normalization for email, phone, dates, whole numbers, money and booleans.
