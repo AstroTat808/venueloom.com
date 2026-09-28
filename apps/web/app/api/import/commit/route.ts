@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   try {
     verifyRequestOrigin(request);
     const tenant = await getIntegrationAdminSession();
-    if (!tenant) return NextResponse.json({ error: "Authentication and organization membership are required." }, { status: 401 });
+    if (!tenant) return NextResponse.json({ error: "Owner or admin access required." }, { status: 403 });
 
     const form = await request.formData();
     const file = form.get("file");
