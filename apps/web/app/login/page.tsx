@@ -1,18 +1,13 @@
 "use client";
 
-import { handleAuthCallback, login, oauthLogin, signup } from "@netlify/identity";
-import { useEffect, useState } from "react";
+import { login, oauthLogin, signup } from "@netlify/identity";
+import { useState } from "react";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    handleAuthCallback().then((result) => {
-      if (result) window.location.href = "/integrations";
-    }).catch((err) => setError(err instanceof Error ? err.message : String(err)));
-  }, []);
 
   async function submit(formData: FormData) {
     setBusy(true);
