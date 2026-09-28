@@ -110,12 +110,31 @@ erDiagram
 | vendors, event_vendors, deliverables | Organization partner directory and event-specific scope/cost/agreement |
 | resources, inventory_units, allocations | Quantity and unique-resource reservation models; venue/space booking not repurposed for inventory counts |
 | portal_grants | Specific event/contact, permission scope, expiry/revocation; no implicit organization-wide read |
-| integration_connections, external_mappings | Account/environment-aware references; secrets encrypted or stored by reference |
+| integration_connections | One external account/environment authorization; secret reference only; explicit scopes/status/expiry/revocation |
+| integration_sync_policies | Per connection/object direction, source-of-truth and create/update/archive rules; two-way is never inferred globally |
+| external_mappings | Stable provider object ID ↔ VenueLoom ID plus provider version/etag/sync token and last accepted payload hash |
+| sync_cursors | Durable webhook/reconciliation/poll cursor per connection/object; advances only after changes are durably accepted |
+| sync_runs, sync_items | Per-run and per-record result ledger including direction, counts, retries, outcome and correlation ID |
+| sync_conflicts | Review queue with VenueLoom/external candidates, base hash and explicit resolution; financial/legal conflicts are never silent last-write-wins |
+| import_runs, import_files, import_rows | Private/quarantined source file, mapping version, source row, validation result and committed target IDs; import is resumable/auditable |
 | webhook_inbox | Unique provider/account/environment/event_id, raw-body hash, verification metadata, processing status |
 | outbox, job_runs | Event type + schema version, tenant, aggregate, retry schedule, lease expiry, idempotency key |
 | notifications, preferences | Recipient/scope/channel/template/version/delivery status; consent and unsubscribe where applicable |
 | audit_events | Organization, actor, action, entity, correlation ID, timestamp, redacted changes; append only |
 | idempotency_requests | Organization, operation, key, request_hash, response, expiry | Unique scope; same key/different body rejected |
+
+### Integration invariants
+
+- A provider connection is organization-scoped and cannot map objects across organizations.
+- External identifiers are unique within provider account/environment/object type.
+- Provider payloads are evidence/transport data, not the authoritative VenueLoom relational model.
+- Imported booked projects do not bypass VenueLoom reservation conflict checks.
+- Historical event imports may be explicitly marked historical so they do not create present-day holds.
+- Settled payments, executed contracts and issued financial documents preserve immutable VenueLoom history even when an external system later changes.
+- Echo-loop suppression uses origin/correlation/payload hash; timestamps alone are insufficient.
+- Disconnecting a provider revokes future work but does not silently delete imported VenueLoom records.
+
+See [integration and migration hub](integration-migration-hub.md) for adapter, migration, conflict and rollout design.
 
 ## Indexing, deletion and evolution
 
