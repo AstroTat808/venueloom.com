@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { resolveIdentity, resolveTenantSession, type TenantSession, type VerifiedIdentity } from "@venueloom/database";
 
 export async function getVerifiedIdentity(): Promise<VerifiedIdentity | null> {
-  await refreshSession();
+  await refreshSession().catch(() => null);
   const user = await getUser();
   if (!user?.id) return null;
   return {
