@@ -131,13 +131,41 @@ CREATE TABLE IF NOT EXISTS rental_calendar_links (
     REFERENCES integration_secrets (organization_id, id) ON DELETE SET NULL
 );
 
-DO $$
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+  id uuid PRIMARY KEY,
+  organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
+  connection_id uuid NOT NULL,
+  venue_calendar_id uuid,
+  object_type text NOT NULL DEFAULT 'calendar_event',
+  internal_id uuid,
+  external_id text,
+  local_candidate jsonb NOT NULL,
+  external_candidate jsonb NOT NULL,
+  field_summary jsonb NOT NULL DEFAULT '[]'::jsonb,
+  state text NOT NULL DEFAULT 'open' CHECK (state IN ('open','resolved','ignored')),
+  resolution text CHECK (resolution IS NULL OR resolution IN ('venueloom','external','merged','ignored')),
+  resolved_by uuid,
+  resolved_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (organization_id, id),
+  UNIQUE (organization_id, connection_id, object_type, external_id, state),
+  FOREIGN KEY (organization_id, connection_id)
+    REFERENCES integration_connections (organization_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (organization_id, venue_calendar_id)
+    REFERENCES venue_calendars (organization_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS sync_conflicts_open_idx
+  ON sync_conflicts (organization_id, state, created_at DESC);
+
+DO $
 DECLARE
   tbl text;
 BEGIN
   FOREACH tbl IN ARRAY ARRAY[
     'integration_secrets','integration_oauth_states','venue_calendars',
-    'calendar_sync_links','calendar_blocks','rental_calendar_links'
+    'calendar_sync_links','calendar_blocks','rental_calendar_links','sync_conflicts'
   ]
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
