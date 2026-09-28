@@ -370,7 +370,7 @@ function MigrationWizard() {
         <div>
           <span className="eyebrow">Migration studio</span>
           <h2>Preview everything before VenueLoom writes anything.</h2>
-          <p>Upload CSV, XLSX, or XLS. VenueLoom maps common columns automatically and flags uncertain rows for review.</p>
+          <p>Upload CSV or XLSX. VenueLoom maps common columns automatically and flags uncertain rows for review.</p>
         </div>
         <span className="secure-badge">Private · dry-run first</span>
       </div>
@@ -407,7 +407,7 @@ function MigrationWizard() {
               </div>
               <button className="drop-zone" onClick={() => fileInput.current?.click()}>
                 <span className="upload-icon">↑</span>
-                <strong>{file ? file.name : "Choose CSV / XLSX / XLS"}</strong>
+                <strong>{file ? file.name : "Choose CSV / XLSX"}</strong>
                 <small>{file ? `${(file.size / 1024).toFixed(1)} KB selected` : "Up to 10 MB and 25,000 rows per sheet"}</small>
               </button>
               <input
