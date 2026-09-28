@@ -313,8 +313,7 @@ CREATE TABLE IF NOT EXISTS integration_sync_queue (
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK ((binding_id IS NOT NULL)::int + (feed_id IS NOT NULL)::int = 1),
   UNIQUE (organization_id, id),
-  FOREIGN KEY (organization_id, binding_id) REFERENCES calendar_bindings(organization_id, id) ON DELETE CASCADE,
-  FOREIGN KEY (organization_id, feed_id) REFERENCES lodging_calendar_feeds(organization_id, id) ON DELETE CASCADE
+  FOREIGN KEY (organization_id, binding_id) REFERENCES calendar_bindings(organization_id, id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS integration_sync_queue_ready_idx
   ON integration_sync_queue(available_at, created_at)
@@ -370,6 +369,12 @@ CREATE TABLE IF NOT EXISTS lodging_calendar_feeds (
   FOREIGN KEY (organization_id, unit_id) REFERENCES lodging_units(organization_id, id) ON DELETE CASCADE,
   FOREIGN KEY (organization_id, source_url_secret_id) REFERENCES integration_secret_envelopes(organization_id, id) ON DELETE RESTRICT
 );
+
+ALTER TABLE integration_sync_queue
+  ADD CONSTRAINT integration_sync_queue_feed_fk
+  FOREIGN KEY (organization_id, feed_id)
+  REFERENCES lodging_calendar_feeds(organization_id, id)
+  ON DELETE CASCADE;
 
 CREATE TABLE IF NOT EXISTS lodging_stays (
   id uuid PRIMARY KEY,
