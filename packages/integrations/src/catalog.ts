@@ -23,6 +23,40 @@ export const providerCatalog: ProviderDefinition[] = [
     ]
   },
   {
+    id: "airbnb",
+    name: "Airbnb",
+    shortName: "AB",
+    category: "lodging",
+    description: "House reservation availability sync using Airbnb host iCal export/import links.",
+    implementation: "ready",
+    connectionMethod: "file",
+    launchWave: 1,
+    capabilities: [
+      { object: "lodging_reservations", modes: ["inbound", "outbound", "two_way"] },
+      { object: "calendar", modes: ["inbound", "outbound", "two_way"] }
+    ],
+    docsUrl: "https://www.airbnb.com/help/article/99",
+    verifiedAt: "2026-09-27",
+    notes: "Host-level coexistence uses iCal. Airbnb refreshes imported calendars on its own schedule, so availability sync is eventual rather than instant."
+  },
+  {
+    id: "vrbo",
+    name: "Vrbo",
+    shortName: "VR",
+    category: "lodging",
+    description: "House reservation availability sync using Vrbo reservation-calendar iCal feeds.",
+    implementation: "ready",
+    connectionMethod: "file",
+    launchWave: 1,
+    capabilities: [
+      { object: "lodging_reservations", modes: ["inbound", "outbound", "two_way"] },
+      { object: "calendar", modes: ["inbound", "outbound", "two_way"] }
+    ],
+    docsUrl: "https://help.vrbo.com/articles/How-do-I-import-my-iCal-or-Google-calendar",
+    verifiedAt: "2026-09-27",
+    notes: "Vrbo supports iCal import/export and currently states calendars sync every 30 minutes."
+  },
+  {
     id: "honeybook",
     name: "HoneyBook",
     shortName: "HB",
@@ -556,5 +590,6 @@ export const providerCategories = [
   "storage",
   "communications",
   "data",
-  "venue"
+  "venue",
+  "lodging"
 ] as const;
