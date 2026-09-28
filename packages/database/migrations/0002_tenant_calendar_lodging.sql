@@ -421,30 +421,8 @@ CREATE TABLE IF NOT EXISTS lodging_export_tokens (
   FOREIGN KEY (organization_id, unit_id) REFERENCES lodging_units(organization_id, id) ON DELETE CASCADE
 );
 
--- Public-calendar resolver intentionally returns only availability fields, never guest data.
-CREATE OR REPLACE FUNCTION resolve_lodging_export_calendar(p_token_hash text)
-RETURNS TABLE (
-  unit_name text,
-  stay_id uuid,
-  starts_on date,
-  ends_on date
-)
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = pg_catalog, public
-AS $$
-  SELECT u.name, s.id, s.starts_on, s.ends_on
-  FROM public.lodging_export_tokens t
-  JOIN public.lodging_units u
-    ON u.organization_id=t.organization_id AND u.id=t.unit_id
-  JOIN public.lodging_stays s
-    ON s.organization_id=t.organization_id AND s.unit_id=t.unit_id
-  WHERE t.token_hash = p_token_hash
-    AND t.revoked_at IS NULL
-    AND s.status IN ('tentative','confirmed','blocked')
-    AND s.source_provider <> t.target_provider
-    AND s.ends_on >= CURRENT_DATE;
-$$;
+-- Public lodging-calendar reads are resolved only by the server-side service connection.
+-- The public HTTP endpoint exposes anonymous availability only; no SQL SECURITY DEFINER bypass is installed.
 
 -- Tenant RLS helpers.
 CREATE OR REPLACE FUNCTION app_org_id() RETURNS uuid
