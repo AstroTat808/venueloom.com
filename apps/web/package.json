@@ -13,7 +13,11 @@
     "@venueloom/integrations": "0.1.0",
     "next": "16.3.6",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "@venueloom/database": "0.1.0",
+    "@venueloom/jobs": "0.1.0",
+    "@netlify/identity": "2.0.0",
+    "@neondatabase/serverless": "1.1.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
