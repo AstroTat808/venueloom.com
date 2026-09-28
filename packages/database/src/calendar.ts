@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { getPool, setLocalContext, withTransaction } from "./client";
+import { setLocalContext, withTransaction } from "./client";
 import { assertVenueAccess, withTenantTransaction } from "./tenant";
 import type { WorkspacePrincipal } from "./workspace";
 
@@ -230,12 +230,13 @@ export async function createRentalCalendarLink(
 
 export async function findRentalFeedByToken(token: string) {
   const tokenHash = createHash("sha256").update(token).digest("hex");
-  const pool = getPool();
-  const result = await pool.query<{
-    organization_id: string; venue_calendar_id: string; connection_id: string;
-    provider_code: "airbnb" | "vrbo"; listing_name: string; timezone: string;
-  }>("SELECT * FROM venueloom_resolve_rental_feed($1)", [tokenHash]);
-  return result.rows[0] ?? null;
+  return withTransaction(async (client) => {
+    const result = await client.query<{
+      organization_id: string; venue_calendar_id: string; connection_id: string;
+      provider_code: "airbnb" | "vrbo"; listing_name: string; timezone: string;
+    }>("SELECT * FROM venueloom_resolve_rental_feed($1)", [tokenHash]);
+    return result.rows[0] ?? null;
+  });
 }
 
 export async function listBlocksForPublicFeed(organizationId: string, venueCalendarId: string, excludeConnectionId?: string | null) {
@@ -304,10 +305,12 @@ export async function withOrganizationTransaction<T>(
 }
 
 export async function listSyncTenantIds(): Promise<string[]> {
-  const result = await getPool().query<{ organization_id: string }>(
-    "SELECT organization_id FROM venueloom_sync_tenant_ids()"
-  );
-  return result.rows.map((row) => row.organization_id);
+  return withTransaction(async (client) => {
+    const result = await client.query<{ organization_id: string }>(
+      "SELECT organization_id FROM venueloom_sync_tenant_ids()"
+    );
+    return result.rows.map((row) => row.organization_id);
+  });
 }
 
 export interface CalendarLinkRuntime {
