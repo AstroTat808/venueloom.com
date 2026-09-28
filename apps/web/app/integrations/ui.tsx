@@ -257,7 +257,7 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
                     <div className="provider-card-foot">
                       <small>Wave {provider.launchWave} · {provider.connectionMethod.replaceAll("_", " ")}</small>
                       <button className="text-button" onClick={() => setSelectedProvider(provider)}>
-                        {provider.id === "generic-file" ? "Import" : "View setup"} →
+                        {provider.id === "generic-file" ? "Import" : provider.implementation === "planned" ? "View plan" : "Connect"} →
                       </button>
                     </div>
                   </article>
@@ -310,10 +310,15 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
                   Start file migration
                 </button>
               ) : (
-                <div className="notice">
-                  Connector UI is staged from this capability definition. OAuth/API credentials are not requested until
-                  that provider adapter is implemented and security-tested.
-                </div>
+                <>
+                  <button className="button secondary full" disabled>
+                    Connect {selectedProvider.name} — adapter activation pending
+                  </button>
+                  <div className="notice">
+                    The Connect control is intentionally locked until this provider's OAuth/API adapter is implemented and
+                    security-tested. The capability drawer shows exactly what will be eligible for sync when activated.
+                  </div>
+                </>
               )}
             </aside>
           </div>
@@ -394,7 +399,12 @@ function MigrationWizard() {
           <div className="step-card">
             <div className="step-number">2</div>
             <div className="step-body">
-              <h3>Choose your export file</h3>
+              <div className="upload-heading">
+                <h3>Choose your export file</h3>
+                <a className="text-button template-link" href={`/api/import/template?entity=${entity}`}>
+                  Download {importEntities.find((item) => item.id === entity)?.label} template
+                </a>
+              </div>
               <button className="drop-zone" onClick={() => fileInput.current?.click()}>
                 <span className="upload-icon">↑</span>
                 <strong>{file ? file.name : "Choose CSV / XLSX / XLS"}</strong>
