@@ -73,10 +73,11 @@ test("detects Dubsado exports and maps project fields while preserving custom fi
       "Start Date": "2026-12-15T18:00:00-10:00",
       "Favorite Venue Style": "Garden"
     }]
-  }, mapping, { preserveUnmappedFields: true });
+  }, mapping, { preserveUnmappedFields: true, providerProfileId: "dubsado" });
 
   assert.equal(preview.rows[0]?.normalized.event_name, "Smith Reception");
-  assert.deepEqual(preview.rows[0]?.normalized.custom_fields, { "Favorite Venue Style": "Garden", "Client Last Name": "Smith" });
+  assert.equal(preview.rows[0]?.normalized.name, "Jordan Smith");
+  assert.deepEqual(preview.rows[0]?.normalized.custom_fields, { "Favorite Venue Style": "Garden" });
 });
 
 test("detects HoneyBook contact/project-style exports", async () => {
