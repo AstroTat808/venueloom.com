@@ -24,7 +24,8 @@ function duplicateKey(entity: ImportEntity, row: Record<string, unknown>): strin
 export function createImportPreview(
   entity: ImportEntity,
   sheet: ParsedSheet,
-  mapping: FieldMapping
+  mapping: FieldMapping,
+  options?: { preserveUnmappedFields?: boolean }
 ): ImportPreview {
   const schema = importSchemas[entity];
   const firstSeen = new Map<string, number>();
@@ -38,6 +39,12 @@ export function createImportPreview(
       const result = normalizeField(field, sourceHeader ? source[sourceHeader] : undefined);
       normalized[field.key] = result.value;
       if (result.issue) issues.push(result.issue);
+    }
+
+    if (options?.preserveUnmappedFields) {
+      const mappedHeaders = new Set(Object.values(mapping).filter((value): value is string => Boolean(value)));
+      const customFields = Object.fromEntries(Object.entries(source).filter(([header, value]) => !mappedHeaders.has(header) && value !== null && value !== ""));
+      if (Object.keys(customFields).length) normalized.custom_fields = customFields;
     }
 
     const rowNumber = index + 2;
