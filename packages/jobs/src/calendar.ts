@@ -1,10 +1,12 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import type { PoolClient } from "@neondatabase/serverless";
 import {
   decryptSecret,
   encryptSecret,
   getServicePool,
   getRuntimeEnv,
-  requireRuntimeEnv
+  requireRuntimeEnv,
+  withServiceTransaction
 } from "@venueloom/database";
 import {
   getCalendarAdapter,
@@ -81,8 +83,8 @@ async function tokensFor(binding: BindingRow): Promise<OAuthTokenSet> {
   return tokens;
 }
 
-async function openConflict(binding: BindingRow, external: ExternalCalendarEvent, internalId: string, field: string, internalValue: unknown, externalValue: unknown) {
-  await getServicePool().query(
+async function openConflict(client: PoolClient, binding: BindingRow, external: ExternalCalendarEvent, internalId: string, field: string, internalValue: unknown, externalValue: unknown) {
+  await client.query(
     `INSERT INTO sync_conflicts(id,organization_id,connection_id,object_type,internal_id,external_id,field_name,venueloom_value,external_value)
      SELECT $1,$2,$3,'calendar_event',$4,$5,$6,$7,$8
      WHERE NOT EXISTS (
@@ -93,8 +95,8 @@ async function openConflict(binding: BindingRow, external: ExternalCalendarEvent
   );
 }
 
-async function hasVenueConflict(binding: BindingRow, eventId: string, startsAt: string, endsAt: string): Promise<boolean> {
-  const result = await getServicePool().query<{ conflict: boolean }>(
+async function hasVenueConflict(client: PoolClient, binding: BindingRow, eventId: string, startsAt: string, endsAt: string): Promise<boolean> {
+  const result = await client.query<{ conflict: boolean }>(
     `SELECT EXISTS(
        SELECT 1 FROM reservations
         WHERE organization_id=$1 AND venue_id=$2 AND event_id IS DISTINCT FROM $3::uuid
@@ -146,60 +148,78 @@ async function applyInbound(binding: BindingRow, external: ExternalCalendarEvent
     return;
   }
 
-  const local = await getServicePool().query<{
-    id: string; name: string; starts_at: string; ends_at: string; timezone: string; status: string; updated_at: string;
-  }>(
-    "SELECT id,name,starts_at,ends_at,timezone,status,updated_at FROM events WHERE organization_id=$1 AND id=$2",
-    [binding.organization_id, internalId]
-  );
-  const event = local.rows[0];
-  if (!event) return;
+  await withServiceTransaction(async (client) => {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [binding.venue_id]);
 
-  if (external.cancelled) {
-    await openConflict(binding, external, event.id, "status", event.status, "cancelled");
-    return;
-  }
+    const local = await client.query<{
+      id: string; name: string; starts_at: string; ends_at: string; timezone: string; status: string; updated_at: string;
+    }>(
+      "SELECT id,name,starts_at,ends_at,timezone,status,updated_at FROM events WHERE organization_id=$1 AND id=$2 FOR UPDATE",
+      [binding.organization_id, internalId]
+    );
+    const event = local.rows[0];
+    if (!event) return;
 
-  const localChanged = binding.last_synced_at && new Date(event.updated_at).getTime() > new Date(binding.last_synced_at).getTime();
-  const externalChanged = !binding.last_synced_at || !external.updatedAt || new Date(external.updatedAt).getTime() > new Date(binding.last_synced_at).getTime();
-  if (localChanged && externalChanged) {
-    await openConflict(binding, external, event.id, "event", {
-      name: event.name, startsAt: event.starts_at, endsAt: event.ends_at
-    }, {
-      name: external.title, startsAt: external.startsAt, endsAt: external.endsAt
-    });
-    return;
-  }
+    if (external.cancelled) {
+      await openConflict(client, binding, external, event.id, "status", event.status, "cancelled");
+      return;
+    }
 
-  if (await hasVenueConflict(binding, event.id, external.startsAt, external.endsAt)) {
-    await openConflict(binding, external, event.id, "availability", {
-      startsAt: event.starts_at, endsAt: event.ends_at
-    }, {
-      startsAt: external.startsAt, endsAt: external.endsAt
-    });
-    return;
-  }
+    const localChanged = Boolean(
+      binding.last_synced_at &&
+      new Date(event.updated_at).getTime() > new Date(binding.last_synced_at).getTime()
+    );
+    const externalChanged = Boolean(
+      !binding.last_synced_at ||
+      !external.updatedAt ||
+      new Date(external.updatedAt).getTime() > new Date(binding.last_synced_at).getTime()
+    );
 
-  await getServicePool().query("SELECT pg_advisory_xact_lock(hashtext($1))", [binding.venue_id]).catch(() => undefined);
-  await getServicePool().query(
-    `UPDATE events SET name=$3,starts_at=$4,ends_at=$5,version=version+1,updated_at=now()
-      WHERE organization_id=$1 AND id=$2`,
-    [binding.organization_id, event.id, external.title, external.startsAt, external.endsAt]
-  );
-  await getServicePool().query(
-    `UPDATE reservations SET starts_at=$3,ends_at=$4,updated_at=now()
-      WHERE organization_id=$1 AND event_id=$2 AND state IN ('held','confirmed')`,
-    [binding.organization_id, event.id, external.startsAt, external.endsAt]
-  );
+    if (localChanged && externalChanged) {
+      await openConflict(client, binding, external, event.id, "event", {
+        name: event.name, startsAt: event.starts_at, endsAt: event.ends_at
+      }, {
+        name: external.title, startsAt: external.startsAt, endsAt: external.endsAt
+      });
+      return;
+    }
 
-  const refreshed = { name: external.title, starts_at: external.startsAt, ends_at: external.endsAt, timezone: event.timezone, status: event.status };
-  await getServicePool().query(
-    `INSERT INTO external_mappings(id,organization_id,connection_id,object_type,external_id,internal_id,external_version,last_seen_hash,last_pulled_at)
-     VALUES ($1,$2,$3,'calendar_event',$4,$5,$6,$7,now())
-     ON CONFLICT (organization_id,connection_id,object_type,external_id)
-     DO UPDATE SET internal_id=EXCLUDED.internal_id,external_version=EXCLUDED.external_version,last_seen_hash=EXCLUDED.last_seen_hash,last_pulled_at=now(),updated_at=now()`,
-    [randomUUID(), binding.organization_id, binding.connection_id, external.id, event.id, external.version ?? null, hashEvent(refreshed)]
-  );
+    if (await hasVenueConflict(client, binding, event.id, external.startsAt, external.endsAt)) {
+      await openConflict(client, binding, external, event.id, "availability", {
+        startsAt: event.starts_at, endsAt: event.ends_at
+      }, {
+        startsAt: external.startsAt, endsAt: external.endsAt
+      });
+      return;
+    }
+
+    await client.query(
+      `UPDATE events SET name=$3,starts_at=$4,ends_at=$5,version=version+1,updated_at=now()
+        WHERE organization_id=$1 AND id=$2`,
+      [binding.organization_id, event.id, external.title, external.startsAt, external.endsAt]
+    );
+    await client.query(
+      `UPDATE reservations SET starts_at=$3,ends_at=$4,updated_at=now()
+        WHERE organization_id=$1 AND event_id=$2 AND state IN ('held','confirmed')`,
+      [binding.organization_id, event.id, external.startsAt, external.endsAt]
+    );
+
+    const refreshed = {
+      name: external.title,
+      starts_at: external.startsAt,
+      ends_at: external.endsAt,
+      timezone: event.timezone,
+      status: event.status
+    };
+    await client.query(
+      `INSERT INTO external_mappings(id,organization_id,connection_id,object_type,external_id,internal_id,external_version,last_seen_hash,last_pulled_at)
+       VALUES ($1,$2,$3,'calendar_event',$4,$5,$6,$7,now())
+       ON CONFLICT (organization_id,connection_id,object_type,external_id)
+       DO UPDATE SET internal_id=EXCLUDED.internal_id,external_version=EXCLUDED.external_version,
+                     last_seen_hash=EXCLUDED.last_seen_hash,last_pulled_at=now(),updated_at=now()`,
+      [randomUUID(), binding.organization_id, binding.connection_id, external.id, event.id, external.version ?? null, hashEvent(refreshed)]
+    );
+  });
 }
 
 async function pushOutbound(binding: BindingRow, tokens: OAuthTokenSet) {
