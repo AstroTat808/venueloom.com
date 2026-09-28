@@ -93,9 +93,7 @@ export async function getPublicLodgingCalendar(token: string) {
     stay_id: string;
     starts_on: string;
     ends_on: string;
-    status: string;
-    source_provider: string;
-  }>("SELECT unit_name,stay_id,starts_on,ends_on,status,source_provider FROM resolve_lodging_export_calendar($1)", [sha256(token)]);
+  }>("SELECT unit_name,stay_id,starts_on,ends_on FROM resolve_lodging_export_calendar($1)", [sha256(token)]);
   return {
     name: result.rows[0]?.unit_name ?? "VenueLoom Availability",
     events: result.rows.map((row) => ({
