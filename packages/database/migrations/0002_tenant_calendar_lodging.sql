@@ -317,6 +317,7 @@ CREATE TABLE IF NOT EXISTS integration_sync_queue (
   available_at timestamptz NOT NULL DEFAULT now(),
   leased_at timestamptz,
   completed_at timestamptz,
+  dead_lettered_at timestamptz,
   attempts integer NOT NULL DEFAULT 0,
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -326,13 +327,13 @@ CREATE TABLE IF NOT EXISTS integration_sync_queue (
 );
 CREATE INDEX IF NOT EXISTS integration_sync_queue_ready_idx
   ON integration_sync_queue(available_at, created_at)
-  WHERE completed_at IS NULL;
+  WHERE completed_at IS NULL AND dead_lettered_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS integration_sync_queue_binding_active_uq
   ON integration_sync_queue(binding_id)
-  WHERE completed_at IS NULL AND binding_id IS NOT NULL;
+  WHERE completed_at IS NULL AND dead_lettered_at IS NULL AND binding_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS integration_sync_queue_feed_active_uq
   ON integration_sync_queue(feed_id)
-  WHERE completed_at IS NULL AND feed_id IS NOT NULL;
+  WHERE completed_at IS NULL AND dead_lettered_at IS NULL AND feed_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS sync_conflicts (
   id uuid PRIMARY KEY,
