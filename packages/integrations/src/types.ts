@@ -26,6 +26,7 @@ export type ConnectionMethod =
   | "api_key"
   | "webhook_bridge"
   | "file"
+  | "ical"
   | "partner_api";
 
 export type SyncMode = "migration" | "inbound" | "outbound" | "two_way";
