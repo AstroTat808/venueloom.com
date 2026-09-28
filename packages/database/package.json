@@ -7,6 +7,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@neondatabase/serverless": "1.1.0"
+    "@neondatabase/serverless": "1.1.0",
+    "@venueloom/importer": "0.1.0",
+    "@venueloom/integrations": "0.1.0"
   }
 }
