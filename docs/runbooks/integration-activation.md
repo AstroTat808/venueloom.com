@@ -41,7 +41,7 @@ Enable Identity in the VenueLoom Netlify project. Configure registration policy 
 
 VenueLoom uses:
 
-- server-side `getUser()` after `refreshSession()`
+- server-side `getUser()` for cookie-backed identity reads
 - stable Netlify user ID -> internal `user_identities`
 - same-origin verification for mutating routes
 - global confirmation/recovery/invite/OAuth callback handling
