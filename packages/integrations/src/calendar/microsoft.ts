@@ -108,6 +108,25 @@ export const microsoftCalendarAdapter: CalendarProviderAdapter = {
     });
     return { id: result.id, version: result.changeKey };
   },
+  async createWatch({ tokens, calendarId, webhookUrl, verificationToken, channelId }) {
+    const expiresAt = new Date(Date.now() + 2.5 * 24 * 60 * 60 * 1000).toISOString();
+    const result = await json<any>(`${graph}/subscriptions`, {
+      method: "POST",
+      headers: { ...auth(tokens), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        changeType: "created,updated,deleted",
+        notificationUrl: webhookUrl,
+        resource: `me/calendars/${calendarId}/events`,
+        expirationDateTime: expiresAt,
+        clientState: verificationToken
+      })
+    });
+    return {
+      channelId: result.id ?? channelId,
+      resourceId: result.resource,
+      expiresAt: result.expirationDateTime ?? expiresAt
+    };
+  },
   async deleteEvent({ tokens, calendarId, externalEventId }) {
     const response = await fetch(`${graph}/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(externalEventId)}`, {
       method: "DELETE", headers: auth(tokens)
