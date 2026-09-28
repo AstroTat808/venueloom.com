@@ -391,6 +391,7 @@ RETURNS TABLE (
   organization_id uuid,
   unit_id uuid,
   target_provider text,
+  unit_name text,
   stay_id uuid,
   starts_on date,
   ends_on date,
@@ -401,8 +402,9 @@ LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT t.organization_id, t.unit_id, t.target_provider, s.id, s.starts_on, s.ends_on, s.status, s.source_provider
+  SELECT t.organization_id, t.unit_id, t.target_provider, u.name, s.id, s.starts_on, s.ends_on, s.status, s.source_provider
   FROM lodging_export_tokens t
+  JOIN lodging_units u ON u.organization_id=t.organization_id AND u.id=t.unit_id
   JOIN lodging_stays s
     ON s.organization_id = t.organization_id
    AND s.unit_id = t.unit_id
