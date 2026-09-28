@@ -132,7 +132,8 @@ async function commitTarget(
     const clientId = clientResult?.id ?? null;
     const startsAt = text(row.starts_at);
     if (!startsAt) return { outcome: "conflict", issue: "Event start time is required." };
-    const endsAt = text(row.ends_at) ?? new Date(new Date(startsAt).getTime() + 4 * 60 * 60 * 1000).toISOString();
+    const endsAt = text(row.ends_at);
+    if (!endsAt) return { outcome: "conflict", issue: "Event end time is required; VenueLoom will not invent a duration." };
     const id = randomUUID();
     const isHistorical = new Date(endsAt).getTime() < Date.now();
     const conflict = !isHistorical && await venueHasConflict(client, org, venueId, startsAt, endsAt);
@@ -176,17 +177,22 @@ async function commitTarget(
   }
 
   if (entity === "payments") {
-    const clientResult = await upsertClient(client, org, { name: row.client_name }, source);
-    const clientId = clientResult?.id ?? null;
     const invoiceNumber = text(row.invoice_number);
     let invoiceId: string | null = null;
+    let invoiceClientId: string | null = null;
     if (invoiceNumber) {
-      const invoice = await client.query<{ id: string }>(
-        "SELECT id FROM invoices WHERE organization_id=$1 AND document_number=$2",
+      const invoice = await client.query<{ id: string; client_id: string | null }>(
+        "SELECT id,client_id FROM invoices WHERE organization_id=$1 AND document_number=$2",
         [org, invoiceNumber]
       );
       invoiceId = invoice.rows[0]?.id ?? null;
+      invoiceClientId = invoice.rows[0]?.client_id ?? null;
     }
+    const clientEmail = text(row.client_email);
+    const clientResult = clientEmail
+      ? await upsertClient(client, org, { name: row.client_name, email: clientEmail }, source)
+      : null;
+    const clientId = clientResult?.id ?? invoiceClientId;
     const id = randomUUID();
     try {
       await client.query(
