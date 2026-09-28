@@ -54,7 +54,7 @@ export function normalizeField(field: FieldDefinition, value: CellValue | undefi
     }
     case "date":
     case "datetime": {
-      const parsed = raw instanceof Date ? raw : new Date(String(raw));
+      const parsed = new Date(String(raw));
       if (Number.isNaN(parsed.getTime())) {
         return { value: raw, issue: { field: field.key, code: "invalid_date", message: `${field.label} is not a valid date` } };
       }
