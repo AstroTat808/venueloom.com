@@ -1,6 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
+  getCalendarMappingByExternalId,
   getExternalMapping,
+  getVenueLoomCalendarBlock,
   listCalendarLinksForOrganization,
   listRentalLinksForOrganization,
   listSyncTenantIds,
@@ -10,6 +12,7 @@ import {
   updateCalendarLinkState,
   updateRentalLinkSyncState,
   upsertCalendarBlockByExternalId,
+  upsertCalendarConflict,
   upsertExternalCalendarMapping
 } from "@venueloom/database";
 import {
@@ -69,6 +72,84 @@ export async function getUsableCalendarToken(
   return token;
 }
 
+
+function canonicalCalendarState(input: {
+  summary?: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  allDay: boolean;
+  status?: string;
+}) {
+  return {
+    summary: input.summary ?? "",
+    startsAt: input.startsAt.toISOString(),
+    endsAt: input.endsAt.toISOString(),
+    allDay: input.allDay,
+    status: input.status ?? "busy"
+  };
+}
+
+function differingCalendarFields(
+  local: ReturnType<typeof canonicalCalendarState>,
+  external: ReturnType<typeof canonicalCalendarState>
+) {
+  return (Object.keys(local) as Array<keyof typeof local>).filter((key) => local[key] !== external[key]);
+}
+
+async function acceptExternalEvent(
+  link: Awaited<ReturnType<typeof listCalendarLinksForOrganization>>[number],
+  sourceType: "google" | "microsoft",
+  event: {
+    id: string; summary?: string | null; startsAt: Date; endsAt: Date; allDay: boolean;
+    status: "busy" | "tentative" | "cancelled"; updatedAt?: Date | null; version?: string | null;
+    payloadHashSource?: unknown;
+  }
+) {
+  const mapping = await getCalendarMappingByExternalId(link.organizationId, link.connectionId, event.id);
+  if (mapping) {
+    const local = await getVenueLoomCalendarBlock(link.organizationId, mapping.internal_id);
+    if (local) {
+      const localState = canonicalCalendarState({
+        summary: local.summary,
+        startsAt: local.starts_at,
+        endsAt: local.ends_at,
+        allDay: local.all_day,
+        status: local.status
+      });
+      const externalState = canonicalCalendarState(event);
+      const differing = differingCalendarFields(localState, externalState);
+      if (differing.length) {
+        await upsertCalendarConflict({
+          organizationId: link.organizationId,
+          connectionId: link.connectionId,
+          venueCalendarId: link.venueCalendarId,
+          internalId: local.id,
+          externalId: event.id,
+          localCandidate: localState,
+          externalCandidate: externalState,
+          fieldSummary: differing
+        });
+      }
+      return;
+    }
+  }
+
+  await upsertCalendarBlockByExternalId({
+    organizationId: link.organizationId,
+    venueCalendarId: link.venueCalendarId,
+    connectionId: link.connectionId,
+    sourceType,
+    externalId: event.id,
+    summary: event.summary,
+    startsAt: event.startsAt,
+    endsAt: event.endsAt,
+    allDay: event.allDay,
+    status: event.status,
+    payloadHash: hash(event.payloadHashSource),
+    sourceUpdatedAt: event.updatedAt
+  });
+}
+
 async function reconcileInbound(
   link: Awaited<ReturnType<typeof listCalendarLinksForOrganization>>[number],
   token: OAuthTokenSet
@@ -94,20 +175,7 @@ async function reconcileInbound(
     }
 
     for (const event of pulled.events) {
-      await upsertCalendarBlockByExternalId({
-        organizationId: link.organizationId,
-        venueCalendarId: link.venueCalendarId,
-        connectionId: link.connectionId,
-        sourceType: "google",
-        externalId: event.id,
-        summary: event.summary,
-        startsAt: event.startsAt,
-        endsAt: event.endsAt,
-        allDay: event.allDay,
-        status: event.status,
-        payloadHash: hash(event.payloadHashSource),
-        sourceUpdatedAt: event.updatedAt
-      });
+      await acceptExternalEvent(link, "google", event);
     }
     await updateCalendarLinkState(link.organizationId, link.id, {
       syncCursor: pulled.nextSyncToken,
@@ -138,20 +206,7 @@ async function reconcileInbound(
   }
 
   for (const event of pulled.events) {
-    await upsertCalendarBlockByExternalId({
-      organizationId: link.organizationId,
-      venueCalendarId: link.venueCalendarId,
-      connectionId: link.connectionId,
-      sourceType: "microsoft",
-      externalId: event.id,
-      summary: event.summary,
-      startsAt: event.startsAt,
-      endsAt: event.endsAt,
-      allDay: event.allDay,
-      status: event.status,
-      payloadHash: hash(event.payloadHashSource),
-      sourceUpdatedAt: event.updatedAt
-    });
+    await acceptExternalEvent(link, "microsoft", event);
   }
   await updateCalendarLinkState(link.organizationId, link.id, {
     syncCursor: pulled.deltaLink,
@@ -330,9 +385,7 @@ export async function reconcileRentalCalendars(organizationId: string) {
           sourceUpdatedAt: event.updatedAt
         });
       }
-      if (seen.length) {
-        await markMissingExternalBlocksCancelled(organizationId, link.connectionId, seen);
-      }
+      await markMissingExternalBlocksCancelled(organizationId, link.connectionId, seen);
       await updateRentalLinkSyncState(organizationId, link.id, {
         etag: response.headers.get("etag"),
         lastModified: response.headers.get("last-modified"),
