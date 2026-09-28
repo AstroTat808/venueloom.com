@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorResponse, requireWorkspace, verifyMutationOrigin } from "../../../../lib/auth";
 import {
   autoMapHeaders,
   createImportPreview,
@@ -22,7 +23,10 @@ const validEntities = new Set<ImportEntity>([
 ]);
 
 export async function POST(request: Request) {
-  const formData = await request.formData();
+  try {
+    verifyMutationOrigin(request);
+    await requireWorkspace(request);
+    const formData = await request.formData();
   const file = formData.get("file");
   const entity = formData.get("entity");
 
@@ -66,8 +70,13 @@ export async function POST(request: Request) {
       coverage,
       preview
     });
+    } catch (error) {
+      const status = typeof error === "object" && error !== null && "status" in error ? Number((error as { status: unknown }).status) : 422;
+      if (status === 401 || status === 403) return errorResponse(error);
+      const message = error instanceof Error ? error.message : "The import could not be parsed.";
+      return NextResponse.json({ error: message }, { status: 422 });
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "The import could not be parsed.";
-    return NextResponse.json({ error: message }, { status: 422 });
+    return errorResponse(error);
   }
 }
