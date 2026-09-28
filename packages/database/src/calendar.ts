@@ -232,14 +232,8 @@ export async function findRentalFeedByToken(token: string) {
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const pool = getPool();
   const result = await pool.query<{
-    id: string; organization_id: string; venue_calendar_id: string; listing_name: string; timezone: string;
-  }>(
-    `SELECT r.id, r.organization_id, r.venue_calendar_id, r.listing_name, vc.timezone
-       FROM rental_calendar_links r
-       JOIN venue_calendars vc ON vc.organization_id=r.organization_id AND vc.id=r.venue_calendar_id
-      WHERE r.outbound_token_hash=$1 AND r.active=true LIMIT 1`,
-    [tokenHash]
-  );
+    organization_id: string; venue_calendar_id: string; listing_name: string; timezone: string;
+  }>("SELECT * FROM venueloom_resolve_rental_feed($1)", [tokenHash]);
   return result.rows[0] ?? null;
 }
 
@@ -304,5 +298,271 @@ export async function withOrganizationTransaction<T>(
   return withTransaction(async (client) => {
     await setLocalContext(client, { organizationId });
     return fn(client);
+  });
+}
+
+export async function listSyncTenantIds(): Promise<string[]> {
+  const result = await getPool().query<{ organization_id: string }>(
+    "SELECT organization_id FROM venueloom_sync_tenant_ids()"
+  );
+  return result.rows.map((row) => row.organization_id);
+}
+
+export interface CalendarLinkRuntime {
+  id: string;
+  organizationId: string;
+  connectionId: string;
+  providerCode: "google-calendar" | "outlook-calendar";
+  venueCalendarId: string;
+  externalCalendarId: string;
+  syncMode: "inbound" | "outbound" | "two_way";
+  blockAvailability: boolean;
+  syncCursor: string | null;
+  webhookChannelId: string | null;
+  webhookResourceId: string | null;
+  webhookClientState: string | null;
+  webhookExpiresAt: Date | null;
+  encryptedToken: string | null;
+}
+
+export async function listCalendarLinksForOrganization(organizationId: string): Promise<CalendarLinkRuntime[]> {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    const result = await client.query<{
+      id: string; connection_id: string; provider_code: CalendarLinkRuntime["providerCode"];
+      venue_calendar_id: string; external_calendar_id: string; sync_mode: CalendarLinkRuntime["syncMode"];
+      block_availability: boolean; sync_cursor: string | null; webhook_channel_id: string | null;
+      webhook_resource_id: string | null; webhook_client_state: string | null; webhook_expires_at: Date | null;
+      encrypted_value: string | null;
+    }>(
+      `SELECT l.id, l.connection_id, c.provider_code, l.venue_calendar_id, l.external_calendar_id,
+              l.sync_mode, l.block_availability, l.sync_cursor, l.webhook_channel_id,
+              l.webhook_resource_id, l.webhook_client_state, l.webhook_expires_at,
+              s.encrypted_value
+         FROM calendar_sync_links l
+         JOIN integration_connections c
+           ON c.organization_id=l.organization_id AND c.id=l.connection_id
+         LEFT JOIN LATERAL (
+           SELECT encrypted_value
+           FROM integration_secrets s
+           WHERE s.organization_id=l.organization_id
+             AND s.connection_id=l.connection_id
+             AND s.purpose='oauth_tokens'
+           ORDER BY s.created_at DESC LIMIT 1
+         ) s ON true
+        WHERE l.organization_id=$1 AND l.active=true AND c.status='active'
+        ORDER BY l.created_at`,
+      [organizationId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      organizationId,
+      connectionId: row.connection_id,
+      providerCode: row.provider_code,
+      venueCalendarId: row.venue_calendar_id,
+      externalCalendarId: row.external_calendar_id,
+      syncMode: row.sync_mode,
+      blockAvailability: row.block_availability,
+      syncCursor: row.sync_cursor,
+      webhookChannelId: row.webhook_channel_id,
+      webhookResourceId: row.webhook_resource_id,
+      webhookClientState: row.webhook_client_state,
+      webhookExpiresAt: row.webhook_expires_at,
+      encryptedToken: row.encrypted_value
+    }));
+  });
+}
+
+export async function getCalendarLinkForOrganization(
+  organizationId: string,
+  linkId: string
+): Promise<CalendarLinkRuntime | null> {
+  const links = await listCalendarLinksForOrganization(organizationId);
+  return links.find((link) => link.id === linkId) ?? null;
+}
+
+export async function updateCalendarLinkState(
+  organizationId: string,
+  linkId: string,
+  patch: {
+    syncCursor?: string | null;
+    webhookChannelId?: string | null;
+    webhookResourceId?: string | null;
+    webhookClientState?: string | null;
+    webhookExpiresAt?: Date | null;
+    lastError?: string | null;
+    syncedNow?: boolean;
+  }
+) {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    await client.query(
+      `UPDATE calendar_sync_links
+          SET sync_cursor = CASE WHEN $3::boolean THEN $4 ELSE sync_cursor END,
+              webhook_channel_id = CASE WHEN $5::boolean THEN $6 ELSE webhook_channel_id END,
+              webhook_resource_id = CASE WHEN $7::boolean THEN $8 ELSE webhook_resource_id END,
+              webhook_client_state = CASE WHEN $9::boolean THEN $10 ELSE webhook_client_state END,
+              webhook_expires_at = CASE WHEN $11::boolean THEN $12 ELSE webhook_expires_at END,
+              last_error = CASE WHEN $13::boolean THEN $14 ELSE last_error END,
+              last_sync_at = CASE WHEN $15::boolean THEN now() ELSE last_sync_at END,
+              updated_at = now()
+        WHERE organization_id=$1 AND id=$2`,
+      [
+        organizationId, linkId,
+        Object.prototype.hasOwnProperty.call(patch, "syncCursor"), patch.syncCursor ?? null,
+        Object.prototype.hasOwnProperty.call(patch, "webhookChannelId"), patch.webhookChannelId ?? null,
+        Object.prototype.hasOwnProperty.call(patch, "webhookResourceId"), patch.webhookResourceId ?? null,
+        Object.prototype.hasOwnProperty.call(patch, "webhookClientState"), patch.webhookClientState ?? null,
+        Object.prototype.hasOwnProperty.call(patch, "webhookExpiresAt"), patch.webhookExpiresAt ?? null,
+        Object.prototype.hasOwnProperty.call(patch, "lastError"), patch.lastError ?? null,
+        patch.syncedNow ?? false
+      ]
+    );
+  });
+}
+
+export async function getConnectionSecret(
+  organizationId: string,
+  connectionId: string,
+  purpose: string
+): Promise<string | null> {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    const result = await client.query<{ encrypted_value: string }>(
+      `SELECT encrypted_value FROM integration_secrets
+        WHERE organization_id=$1 AND connection_id=$2 AND purpose=$3
+        ORDER BY created_at DESC LIMIT 1`,
+      [organizationId, connectionId, purpose]
+    );
+    return result.rows[0]?.encrypted_value ?? null;
+  });
+}
+
+export interface RentalLinkRuntime {
+  id: string;
+  organizationId: string;
+  connectionId: string;
+  venueCalendarId: string;
+  providerCode: "airbnb" | "vrbo";
+  listingName: string;
+  encryptedInboundUrl: string | null;
+  lastEtag: string | null;
+  lastModified: string | null;
+}
+
+export async function listRentalLinksForOrganization(organizationId: string): Promise<RentalLinkRuntime[]> {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    const result = await client.query<{
+      id: string; connection_id: string; venue_calendar_id: string; provider_code: "airbnb" | "vrbo";
+      listing_name: string; encrypted_value: string | null; last_etag: string | null; last_modified: string | null;
+    }>(
+      `SELECT r.id, r.connection_id, r.venue_calendar_id, r.provider_code, r.listing_name,
+              s.encrypted_value, r.last_etag, r.last_modified
+         FROM rental_calendar_links r
+         LEFT JOIN integration_secrets s
+           ON s.organization_id=r.organization_id AND s.id=r.inbound_secret_id
+        WHERE r.organization_id=$1 AND r.active=true
+        ORDER BY r.created_at`,
+      [organizationId]
+    );
+    return result.rows.map((row) => ({
+      id: row.id, organizationId, connectionId: row.connection_id,
+      venueCalendarId: row.venue_calendar_id, providerCode: row.provider_code,
+      listingName: row.listing_name, encryptedInboundUrl: row.encrypted_value,
+      lastEtag: row.last_etag, lastModified: row.last_modified
+    }));
+  });
+}
+
+export async function updateRentalLinkSyncState(
+  organizationId: string,
+  linkId: string,
+  patch: { etag?: string | null; lastModified?: string | null; error?: string | null }
+) {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    await client.query(
+      `UPDATE rental_calendar_links
+          SET last_etag=COALESCE($3,last_etag),
+              last_modified=COALESCE($4,last_modified),
+              last_error=$5,
+              last_sync_at=CASE WHEN $5 IS NULL THEN now() ELSE last_sync_at END,
+              updated_at=now()
+        WHERE organization_id=$1 AND id=$2`,
+      [organizationId, linkId, patch.etag ?? null, patch.lastModified ?? null, patch.error ?? null]
+    );
+  });
+}
+
+export async function listVenueLoomBlocksForOutbound(
+  organizationId: string,
+  venueCalendarId: string
+) {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    const result = await client.query<{
+      id: string; summary: string | null; starts_at: Date; ends_at: Date; all_day: boolean; updated_at: Date;
+    }>(
+      `SELECT id, summary, starts_at, ends_at, all_day, updated_at
+         FROM calendar_blocks
+        WHERE organization_id=$1 AND venue_calendar_id=$2
+          AND source_type='venueloom' AND status <> 'cancelled'
+          AND ends_at >= now() - interval '30 days'
+          AND starts_at <= now() + interval '2 years'
+        ORDER BY starts_at`,
+      [organizationId, venueCalendarId]
+    );
+    return result.rows;
+  });
+}
+
+export async function getExternalMapping(
+  organizationId: string,
+  connectionId: string,
+  internalId: string
+) {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    const result = await client.query<{ external_id: string; external_version: string | null; last_seen_hash: string | null }>(
+      `SELECT external_id, external_version, last_seen_hash
+         FROM external_mappings
+        WHERE organization_id=$1 AND connection_id=$2 AND object_type='calendar_event' AND internal_id=$3
+        LIMIT 1`,
+      [organizationId, connectionId, internalId]
+    );
+    return result.rows[0] ?? null;
+  });
+}
+
+export async function upsertExternalCalendarMapping(input: {
+  organizationId: string; connectionId: string; internalId: string; externalId: string;
+  externalVersion?: string | null; hash?: string | null;
+}) {
+  return withOrganizationTransaction(input.organizationId, async (client) => {
+    await client.query(
+      `INSERT INTO external_mappings (
+        id, organization_id, connection_id, object_type, external_id, internal_id,
+        external_version, last_seen_hash, last_pushed_at
+      ) VALUES ($1,$2,$3,'calendar_event',$4,$5,$6,$7,now())
+      ON CONFLICT (organization_id, connection_id, object_type, external_id)
+      DO UPDATE SET internal_id=EXCLUDED.internal_id, external_version=EXCLUDED.external_version,
+                    last_seen_hash=EXCLUDED.last_seen_hash, last_pushed_at=now(), updated_at=now()`,
+      [
+        randomUUID(), input.organizationId, input.connectionId, input.externalId,
+        input.internalId, input.externalVersion ?? null, input.hash ?? null
+      ]
+    );
+  });
+}
+
+export async function markMissingExternalBlocksCancelled(
+  organizationId: string,
+  connectionId: string,
+  seenExternalIds: string[]
+) {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    if (!seenExternalIds.length) return;
+    await client.query(
+      `UPDATE calendar_blocks
+          SET status='cancelled', updated_at=now()
+        WHERE organization_id=$1 AND connection_id=$2
+          AND external_id IS NOT NULL
+          AND NOT (external_id = ANY($3::text[]))`,
+      [organizationId, connectionId, seenExternalIds]
+    );
   });
 }
