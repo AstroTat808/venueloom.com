@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["apps/web/*"]
+    }
+  },
+  "include": [
+    "functions/**/*.mts",
+    "../apps/web/lib/**/*.ts",
+    "../packages/database/src/**/*.ts",
+    "../packages/integrations/src/**/*.ts"
+  ]
+}
