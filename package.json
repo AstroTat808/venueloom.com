@@ -13,7 +13,7 @@
     "dev": "npm run dev --workspace @venueloom/web",
     "build": "npm run build --workspace @venueloom/web",
     "start": "npm run start --workspace @venueloom/web",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p netlify/tsconfig.json",
     "test": "tsx --test packages/importer/test/*.test.ts packages/integrations/test/*.test.ts",
     "dev:netlify": "netlify dev"
   },
