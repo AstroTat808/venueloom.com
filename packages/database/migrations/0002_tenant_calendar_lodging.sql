@@ -251,6 +251,7 @@ CREATE TABLE IF NOT EXISTS calendar_bindings (
   cursor_window_end timestamptz,
   webhook_channel_id text,
   webhook_resource_id text,
+  webhook_token_hash text,
   webhook_expires_at timestamptz,
   last_synced_at timestamptz,
   last_error text,
@@ -281,6 +282,25 @@ CREATE TABLE IF NOT EXISTS calendar_blocks (
   UNIQUE (organization_id, id)
 );
 CREATE INDEX IF NOT EXISTS calendar_blocks_venue_active_idx ON calendar_blocks(organization_id, venue_id, starts_at, ends_at) WHERE state='active';
+
+CREATE TABLE IF NOT EXISTS integration_sync_queue (
+  id uuid PRIMARY KEY,
+  organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  binding_id uuid REFERENCES calendar_bindings(id) ON DELETE CASCADE,
+  feed_id uuid REFERENCES lodging_calendar_feeds(id) ON DELETE CASCADE,
+  reason text NOT NULL,
+  available_at timestamptz NOT NULL DEFAULT now(),
+  leased_at timestamptz,
+  completed_at timestamptz,
+  attempts integer NOT NULL DEFAULT 0,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK ((binding_id IS NOT NULL)::int + (feed_id IS NOT NULL)::int = 1),
+  UNIQUE (organization_id, id)
+);
+CREATE INDEX IF NOT EXISTS integration_sync_queue_ready_idx
+  ON integration_sync_queue(available_at, created_at)
+  WHERE completed_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS sync_conflicts (
   id uuid PRIMARY KEY,
@@ -426,7 +446,7 @@ BEGIN
     'memberships','venues','membership_venue_grants','clients','inquiries','events','reservations',
     'invoices','payments','vendors','staff_profiles','import_runs','import_rows','integration_connections',
     'external_mappings','integration_secret_envelopes','oauth_states','calendar_bindings','calendar_blocks',
-    'sync_conflicts','lodging_units','lodging_calendar_feeds','lodging_stays','lodging_export_tokens'
+    'integration_sync_queue','sync_conflicts','lodging_units','lodging_calendar_feeds','lodging_stays','lodging_export_tokens'
   ]
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
