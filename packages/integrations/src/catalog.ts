@@ -143,6 +143,40 @@ export const providerCatalog: ProviderDefinition[] = [
     verifiedAt: v
   },
   {
+    id: "airbnb",
+    name: "Airbnb",
+    shortName: "AB",
+    category: "venue",
+    description: "House reservation availability sync using Airbnb's supported iCalendar export/import workflow.",
+    implementation: "ready",
+    connectionMethod: "ical",
+    launchWave: 1,
+    capabilities: [
+      { object: "calendar", modes: ["inbound", "outbound", "two_way"] },
+      { object: "events", modes: ["inbound"] }
+    ],
+    docsUrl: "https://www.airbnb.com/help/article/99",
+    verifiedAt: v,
+    notes: "VenueLoom syncs reservation/blocked-date availability through .ics feeds; it does not scrape Airbnb credentials or private host pages."
+  },
+  {
+    id: "vrbo",
+    name: "Vrbo",
+    shortName: "VB",
+    category: "venue",
+    description: "House reservation availability sync using Vrbo's supported iCalendar export/import workflow.",
+    implementation: "ready",
+    connectionMethod: "ical",
+    launchWave: 1,
+    capabilities: [
+      { object: "calendar", modes: ["inbound", "outbound", "two_way"] },
+      { object: "events", modes: ["inbound"] }
+    ],
+    docsUrl: "https://help.vrbo.com/articles/How-do-I-import-my-iCal-or-Google-calendar",
+    verifiedAt: v,
+    notes: "VenueLoom imports the Vrbo reservation calendar and publishes a source-filtered VenueLoom .ics feed to paste back into Vrbo."
+  },
+  {
     id: "gmail",
     name: "Gmail",
     shortName: "GM",

@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
+import { errorResponse, requireWorkspace, verifyMutationOrigin } from "../../../../lib/auth";
 import {
+  applyProviderProfile,
   autoMapHeaders,
   createImportPreview,
+  detectProviderProfile,
   mappingCoverage,
   parseImportFile,
+  profileAliases,
+  providerProfileName,
   validateImportFile,
   type FieldMapping,
   type ImportEntity
@@ -22,7 +27,10 @@ const validEntities = new Set<ImportEntity>([
 ]);
 
 export async function POST(request: Request) {
-  const formData = await request.formData();
+  try {
+    verifyMutationOrigin(request);
+    await requireWorkspace(request);
+    const formData = await request.formData();
   const file = formData.get("file");
   const entity = formData.get("entity");
 
@@ -37,20 +45,22 @@ export async function POST(request: Request) {
     validateImportFile(file.name, file.size);
     const sheets = await parseImportFile(file.name, await file.arrayBuffer());
     const requestedSheet = formData.get("sheet");
-    const sheet =
+    const rawSheet =
       typeof requestedSheet === "string" && requestedSheet
         ? sheets.find((candidate) => candidate.sheetName === requestedSheet)
         : sheets[0];
 
-    if (!sheet || sheet.rowCount === 0) {
+    if (!rawSheet || rawSheet.rowCount === 0) {
       return NextResponse.json({ error: "The selected sheet does not contain importable rows.", sheets }, { status: 422 });
     }
 
+    const detected = detectProviderProfile(rawSheet.headers);
+    const sheet = applyProviderProfile(detected?.id ?? null, entity as ImportEntity, rawSheet);
     const rawMapping = formData.get("mapping");
     const mapping: FieldMapping =
       typeof rawMapping === "string" && rawMapping
         ? JSON.parse(rawMapping)
-        : autoMapHeaders(entity as ImportEntity, sheet.headers);
+        : autoMapHeaders(entity as ImportEntity, sheet.headers, profileAliases(entity as ImportEntity, detected?.id ?? null));
 
     const coverage = mappingCoverage(entity as ImportEntity, mapping);
     const preview = coverage.canPreview
@@ -61,13 +71,19 @@ export async function POST(request: Request) {
       file: { name: file.name, size: file.size },
       sheets: sheets.map(({ sheetName, rowCount, headers }) => ({ sheetName, rowCount, headers })),
       selectedSheet: sheet.sheetName,
+      providerProfile: detected ? { id: detected.id, name: providerProfileName(detected.id) } : null,
       entity,
       mapping,
       coverage,
       preview
     });
+    } catch (error) {
+      const status = typeof error === "object" && error !== null && "status" in error ? Number((error as { status: unknown }).status) : 422;
+      if (status === 401 || status === 403) return errorResponse(error);
+      const message = error instanceof Error ? error.message : "The import could not be parsed.";
+      return NextResponse.json({ error: message }, { status: 422 });
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "The import could not be parsed.";
-    return NextResponse.json({ error: message }, { status: 422 });
+    return errorResponse(error);
   }
 }

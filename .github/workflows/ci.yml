@@ -20,3 +20,44 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  postgres-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: venueloom_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d venueloom_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migrations in order
+        run: |
+          for migration in packages/database/migrations/*.sql; do
+            echo "Applying $migration"
+            psql -h 127.0.0.1 -U postgres -d venueloom_test -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Verify runtime role and RLS
+        run: |
+          psql -h 127.0.0.1 -U postgres -d venueloom_test -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT rolname, rolbypassrls, rolsuper
+          FROM pg_roles
+          WHERE rolname = 'venueloom_runtime';
+
+          SELECT tablename, rowsecurity
+          FROM pg_tables
+          WHERE schemaname = 'public'
+            AND tablename IN ('organizations','memberships','venues','clients','events','calendar_blocks','sync_conflicts')
+          ORDER BY tablename;
+          SQL

@@ -1,16 +1,26 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderDefinition, ProviderCategory } from "@venueloom/integrations";
-import { importSchemas, type ImportEntity } from "@venueloom/importer";
+import { importSchemas } from "@venueloom/importer/schemas";
+import type { ImportEntity } from "@venueloom/importer/types";
 
 type DashboardTab = "catalog" | "migration" | "sync" | "conflicts";
+
+type WorkspaceSummary = {
+  organizationId: string;
+  organizationName: string;
+  role: string;
+  userName: string;
+  venues: Array<{ id: string; name: string; timezone: string; currency: string }>;
+};
 
 type PreviewResponse = {
   error?: string;
   file?: { name: string; size: number };
   sheets?: Array<{ sheetName: string; rowCount: number; headers: string[] }>;
   selectedSheet?: string;
+  providerProfile?: { id: string; name: string | null } | null;
   entity?: ImportEntity;
   mapping?: Record<string, string | null>;
   coverage?: {
@@ -86,7 +96,7 @@ function formatMode(mode: string) {
   return "Migration";
 }
 
-export function IntegrationsDashboard({ providers }: { providers: ProviderDefinition[] }) {
+export function IntegrationsDashboard({ providers, workspace }: { providers: ProviderDefinition[]; workspace: WorkspaceSummary }) {
   const [tab, setTab] = useState<DashboardTab>("catalog");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>("all");
@@ -138,8 +148,8 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
         <div className="sidebar-foot">
           <div className="workspace-avatar">KE</div>
           <div>
-            <strong>Koa's Events</strong>
-            <span>Organization workspace</span>
+            <strong>{workspace.organizationName}</strong>
+            <span>{workspace.role} workspace</span>
           </div>
         </div>
       </aside>
@@ -149,7 +159,7 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
           <div className="eyebrow">Settings / Integrations & Migration</div>
           <div className="top-actions">
             <button className="icon-button" aria-label="Help">?</button>
-            <div className="user-avatar">CS</div>
+            <div className="user-avatar">{workspace.userName.split(/\s|@/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "VL"}</div>
           </div>
         </header>
 
@@ -267,7 +277,7 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
           </section>
         )}
 
-        {tab === "migration" && <MigrationWizard />}
+        {tab === "migration" && <MigrationWizard workspace={workspace} />}
 
         {tab === "sync" && <SyncCenter providers={providers} />}
 
@@ -309,14 +319,26 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
                 <button className="button primary full" onClick={() => { setSelectedProvider(null); setTab("migration"); }}>
                   Start file migration
                 </button>
+              ) : selectedProvider.id === "google-calendar" ? (
+                <a className="button primary full button-link" href="/api/integrations/calendar/connect/google">
+                  Connect Google Calendar
+                </a>
+              ) : selectedProvider.id === "outlook-calendar" ? (
+                <a className="button primary full button-link" href="/api/integrations/calendar/connect/microsoft">
+                  Connect Outlook Calendar
+                </a>
+              ) : selectedProvider.id === "airbnb" || selectedProvider.id === "vrbo" ? (
+                <a className="button primary full button-link" href={`/integrations/rentals?provider=${selectedProvider.id}`}>
+                  Connect {selectedProvider.name} house calendar
+                </a>
               ) : (
                 <>
                   <button className="button secondary full" disabled>
                     Connect {selectedProvider.name} — adapter activation pending
                   </button>
                   <div className="notice">
-                    The Connect control is intentionally locked until this provider's OAuth/API adapter is implemented and
-                    security-tested. The capability drawer shows exactly what will be eligible for sync when activated.
+                    This provider remains capability-defined but is not yet credential-enabled. VenueLoom will not request
+                    credentials until its adapter has passed the provider-specific release gates.
                   </div>
                 </>
               )}
@@ -328,7 +350,7 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
   );
 }
 
-function MigrationWizard() {
+function MigrationWizard({ workspace }: { workspace: WorkspaceSummary }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [entity, setEntity] = useState<ImportEntity>("clients");
   const [file, setFile] = useState<File | null>(null);
@@ -336,6 +358,8 @@ function MigrationWizard() {
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [selectedSheet, setSelectedSheet] = useState("");
   const [busy, setBusy] = useState(false);
+  const [venueId, setVenueId] = useState(workspace.venues[0]?.id ?? "");
+  const [commitResult, setCommitResult] = useState<{ importRunId: string; replayed: boolean; totals: { discovered: number; create: number; skip: number; error: number } } | null>(null);
 
   async function preview(nextMapping?: Record<string, string | null>, sheetOverride?: string) {
     if (!file) return;
@@ -362,6 +386,29 @@ function MigrationWizard() {
     setResult(null);
     setMapping({});
     setSelectedSheet("");
+    setCommitResult(null);
+  }
+
+  async function commitMigration() {
+    if (!file || !result?.preview) return;
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("entity", entity);
+      if (selectedSheet) form.append("sheet", selectedSheet);
+      form.append("mapping", JSON.stringify(mapping));
+      if (venueId) form.append("venueId", venueId);
+      const response = await fetch("/api/import/commit", { method: "POST", body: form });
+      const json = await response.json();
+      if (!response.ok) {
+        setResult((current) => ({ ...(current ?? {}), error: json.error ?? "Migration commit failed." }));
+        return;
+      }
+      setCommitResult(json);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -393,6 +440,14 @@ function MigrationWizard() {
                   </button>
                 ))}
               </div>
+              {(entity === "inquiries" || entity === "events") && (
+                <label className="venue-import-select">
+                  <span>Import into venue</span>
+                  <select value={venueId} onChange={(event) => setVenueId(event.target.value)} required>
+                    {workspace.venues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name} · {venue.timezone}</option>)}
+                  </select>
+                </label>
+              )}
             </div>
           </div>
 
@@ -413,7 +468,7 @@ function MigrationWizard() {
               <input
                 ref={fileInput}
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,.xlsx"
                 hidden
                 onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
               />
@@ -452,6 +507,11 @@ function MigrationWizard() {
             <div className="step-card">
               <div className="step-number">{result.sheets.length > 1 ? "4" : "3"}</div>
               <div className="step-body">
+                {result.providerProfile && (
+                  <div className="notice provider-detected">
+                    <strong>{result.providerProfile.name} export detected.</strong> VenueLoom added provider-specific normalized fields before auto-mapping.
+                  </div>
+                )}
                 <div className="mapping-head">
                   <div>
                     <h3>Confirm field mapping</h3>
@@ -535,11 +595,18 @@ function MigrationWizard() {
                   <p className="table-note">Showing the first 50 rows of {result.preview.rows.length}.</p>
                 )}
 
-                <div className="notice amber">
-                  Import commit is intentionally locked until authenticated organization context and the PostgreSQL migration are active.
-                  This prevents an upload from writing into the wrong venue or organization.
+                <div className="notice">
+                  This commit is scoped to <strong>{workspace.organizationName}</strong>{(entity === "inquiries" || entity === "events") && venueId ? ` and ${workspace.venues.find((venue) => venue.id === venueId)?.name ?? "the selected venue"}` : ""}. Existing stable matches are skipped instead of duplicated.
                 </div>
-                <button className="button disabled-button" disabled>Commit migration — authentication required</button>
+                <button className="button primary" disabled={busy || ((entity === "inquiries" || entity === "events") && !venueId)} onClick={() => void commitMigration()}>
+                  {busy ? "Committing…" : "Commit migration"}
+                </button>
+                {commitResult && (
+                  <div className="notice">
+                    <strong>{commitResult.replayed ? "Already committed" : "Migration committed"}</strong><br />
+                    Run {commitResult.importRunId} · {commitResult.totals.create} created · {commitResult.totals.skip} skipped · {commitResult.totals.error} errors.
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -634,7 +701,55 @@ function SyncCenter({ providers }: { providers: ProviderDefinition[] }) {
 }
 
 function ConflictCenter() {
-  const [resolution, setResolution] = useState<"venueloom" | "external" | "merged">("venueloom");
+  type Conflict = {
+    id: string;
+    providerCode: string;
+    connectionName: string;
+    fields: string[];
+    local: Record<string, unknown>;
+    external: Record<string, unknown>;
+    createdAt: string;
+  };
+
+  const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [resolving, setResolving] = useState("");
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/integrations/conflicts", { cache: "no-store" });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error ?? "Conflicts could not be loaded.");
+      setConflicts(json.conflicts ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Conflicts could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  async function resolve(id: string, resolution: "venueloom" | "external") {
+    setResolving(id);
+    setError("");
+    try {
+      const response = await fetch(`/api/integrations/conflicts/${id}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolution })
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error ?? "Conflict resolution failed.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Conflict resolution failed.");
+    } finally {
+      setResolving("");
+    }
+  }
 
   return (
     <section className="content-section">
@@ -642,59 +757,55 @@ function ConflictCenter() {
         <div>
           <span className="eyebrow">Conflict resolution</span>
           <h2>Protected changes never disappear into “last write wins.”</h2>
-          <p>VenueLoom will queue concurrent edits to booking dates, issued invoices, payments and executed contracts for explicit review.</p>
+          <p>VenueLoom queues competing edits to mapped calendar events so event times and availability require an explicit choice.</p>
         </div>
-        <span className="secure-badge">0 live conflicts</span>
+        <span className="secure-badge">{loading ? "Checking…" : `${conflicts.length} open`}</span>
       </div>
 
-      <div className="conflict-layout">
+      {error && <div className="notice error">{error}</div>}
+
+      {!loading && conflicts.length === 0 ? (
         <div className="empty-state compact">
           <div className="empty-orbit">✓</div>
           <h3>No live conflicts.</h3>
-          <p>When integrations are connected, competing VenueLoom and provider edits will appear here with both values, timestamps and source versions.</p>
+          <p>Google and Outlook changes that disagree with a VenueLoom-origin booking will appear here automatically.</p>
         </div>
-
-        <div className="conflict-demo">
-          <div className="conflict-demo-head">
-            <div>
-              <span className="eyebrow">Conflict UI preview</span>
-              <h3>Event start time changed in two systems</h3>
-              <p>This is a non-live example showing the exact review experience.</p>
-            </div>
-            <span className="warning-badge">Protected field</span>
-          </div>
-
-          <div className="comparison-grid">
-            <button className={resolution === "venueloom" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("venueloom")}>
-              <span>Keep VenueLoom</span>
-              <strong>6:00 PM</strong>
-              <small>Edited by venue manager · version 18</small>
-            </button>
-            <button className={resolution === "external" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("external")}>
-              <span>Use external CRM</span>
-              <strong>7:00 PM</strong>
-              <small>Dubsado project update · source version 9921</small>
-            </button>
-            <button className={resolution === "merged" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("merged")}>
-              <span>Merge manually</span>
-              <strong>Custom value</strong>
-              <small>Review related end time and reservation first</small>
-            </button>
-          </div>
-
-          <div className="conflict-impact">
-            <strong>Before resolution VenueLoom would re-check:</strong>
-            <span>reservation availability</span>
-            <span>setup/teardown buffers</span>
-            <span>calendar write-back policy</span>
-            <span>event version</span>
-          </div>
-
-          <button className="button disabled-button" disabled>
-            Resolve example — live conflict required
-          </button>
+      ) : (
+        <div className="conflict-list">
+          {conflicts.map((conflict) => (
+            <article className="conflict-demo" key={conflict.id}>
+              <div className="conflict-demo-head">
+                <div>
+                  <span className="eyebrow">{conflict.connectionName}</span>
+                  <h3>Calendar event changed outside VenueLoom</h3>
+                  <p>Changed fields: {conflict.fields.map(formatObject).join(", ") || "calendar data"}</p>
+                </div>
+                <span className="warning-badge">{conflict.providerCode === "google-calendar" ? "Google" : "Outlook"}</span>
+              </div>
+              <div className="comparison-grid two">
+                <div className="comparison-card selected">
+                  <span>VenueLoom</span>
+                  <strong>{String(conflict.local.summary ?? "VenueLoom booking")}</strong>
+                  <small>{String(conflict.local.startsAt ?? "")} → {String(conflict.local.endsAt ?? "")}</small>
+                </div>
+                <div className="comparison-card">
+                  <span>External calendar</span>
+                  <strong>{String(conflict.external.summary ?? "External event")}</strong>
+                  <small>{String(conflict.external.startsAt ?? "")} → {String(conflict.external.endsAt ?? "")}</small>
+                </div>
+              </div>
+              <div className="conflict-actions">
+                <button className="button primary" disabled={resolving === conflict.id} onClick={() => void resolve(conflict.id, "venueloom")}>
+                  Keep VenueLoom
+                </button>
+                <button className="button secondary" disabled={resolving === conflict.id} onClick={() => void resolve(conflict.id, "external")}>
+                  Use external change
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
-      </div>
+      )}
     </section>
   );
 }
