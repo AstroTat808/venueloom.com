@@ -26,8 +26,12 @@ function auth(tokens: OAuthTokenSet) {
 
 function googleEvent(item: any): ExternalCalendarEvent {
   const allDay = Boolean(item.start?.date);
-  const startsAt = allDay ? `${item.start.date}T00:00:00.000Z` : item.start?.dateTime;
-  const endsAt = allDay ? `${item.end.date}T00:00:00.000Z` : item.end?.dateTime;
+  const startsAt = allDay
+    ? `${item.start.date}T00:00:00.000Z`
+    : item.start?.dateTime ?? "1970-01-01T00:00:00.000Z";
+  const endsAt = allDay
+    ? `${item.end.date}T00:00:00.000Z`
+    : item.end?.dateTime ?? "1970-01-01T00:00:01.000Z";
   return {
     id: item.id,
     version: item.etag,
@@ -112,7 +116,7 @@ export const googleCalendarAdapter: CalendarProviderAdapter = {
       }
       if (pageToken) url.searchParams.set("pageToken", pageToken);
       const data = await json<any>(url.toString(), { headers: auth(tokens) });
-      events.push(...(data.items ?? []).filter((item: any) => item.start && item.end).map(googleEvent));
+      events.push(...(data.items ?? []).filter((item: any) => item.id && ((item.start && item.end) || item.status === "cancelled")).map(googleEvent));
       pageToken = data.nextPageToken;
       nextSyncToken = data.nextSyncToken ?? nextSyncToken;
     } while (pageToken);
@@ -147,7 +151,7 @@ export const googleCalendarAdapter: CalendarProviderAdapter = {
           type: "web_hook",
           address: webhookUrl,
           token: verificationToken,
-          expiration
+          expiration: String(expiration)
         })
       }
     );
