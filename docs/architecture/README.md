@@ -1,23 +1,28 @@
 # VenueLoom platform blueprint
 
-Status: foundation design · 23 September 2026.
+Status: foundation design · updated 27 September 2026.
 
 ## Product and system boundary
 
 VenueLoom serves independent venue businesses from sales inquiry through event delivery and reporting. A business can operate several venues, each with bookable spaces, staff, vendors, and local calendars. The same client can book several venues. The owner buys the VenueLoom subscription; an event client pays the venue business. These are separate commercial relationships.
 
-The initial product is a single deployable web application with well-defined modules. It includes the marketing website, authenticated operations workspace, and eventually narrowly scoped client/vendor portals. Separate services are justified only by measured workload or an independent operational requirement. Module interfaces make extraction possible later without building distributed transactions now.
+Migration and coexistence with existing software are part of the product boundary. An organization can start fresh, import historical data, keep another system as a one-way source/destination, or enable per-object two-way synchronization when that provider exposes safe supported operations. VenueLoom does not depend on undocumented APIs or password-based screen scraping.
+
+The initial product is a single deployable web application with well-defined modules. It includes the marketing website, authenticated operations workspace, onboarding/migration flows, and eventually narrowly scoped client/vendor portals. Separate services are justified only by measured workload or an independent operational requirement. Module interfaces make extraction possible later without building distributed transactions now.
 
 ```mermaid
 flowchart TD
-  Web["Marketing, workspace and portals"] --> App["Application commands and queries"]
+  Web["Marketing, onboarding, workspace and portals"] --> App["Application commands and queries"]
   App --> Auth["Identity and permissions"]
   App --> DB["PostgreSQL tenant data"]
+  Import["Migration files / provider discovery"] --> Hub["Integration Hub"]
+  Hub --> App
   App --> Outbox["Transactional outbox"]
   Outbox --> Worker["Durable worker"]
-  Worker --> Providers["Payments, signatures and messages"]
-  Providers --> Inbox["Verified webhook inbox"]
-  Inbox --> App
+  Worker --> Hub
+  Hub --> Providers["CRM, accounting, calendar, payments, signatures and messages"]
+  Providers --> Inbox["Verified webhook / reconciliation inbox"]
+  Inbox --> Hub
 ```
 
 ## Technology and deployment decisions
@@ -33,6 +38,7 @@ flowchart TD
 | Jobs | Database outbox/inbox and a scheduled worker adapter | Durable delivery and retries; never depend on request background promises |
 | Files | Private object-storage adapter, metadata in PostgreSQL | Provider may change without changing document ownership |
 | Payments | Provider adapter; separate SaaS billing and venue payment modules | Prevents confusing VenueLoom revenue with customer event funds |
+| Integration Hub | Capability manifests + provider adapters + canonical import/sync DTOs | One migration/sync framework supports many platforms without provider-specific business tables |
 | Observability | Structured logs, request IDs, error monitoring, audit trail | Traceable workflows without logging secrets or full client documents |
 
 Production provider resources have not been provisioned by this design. Netlify Identity must be enabled and configured; Neon needs separate migration/runtime credentials. Preview credentials and databases must never point to production by default.
@@ -43,8 +49,8 @@ Production provider resources have not been provisioned by this design. Netlify 
 - `packages/domain`: workflow types, validation, transitions and permissions; no React or infrastructure imports.
 - `packages/database`: migrations, tenant transactions, repositories and database integration tests.
 - `packages/auth`: verified identity and membership resolution. No role decisions from client-controlled metadata.
-- `packages/integrations`: payment, email, signature, calendar and storage adapters as they are implemented.
-- `packages/jobs`: inbox/outbox processing and task scheduling when external integrations begin.
+- `packages/integrations`: provider manifests, canonical import/sync types and concrete payment, CRM, accounting, email, signature, calendar and storage adapters as they are implemented.
+- `packages/jobs`: inbox/outbox processing, synchronization, reconciliation and task scheduling when external integrations begin.
 - `docs`: architecture, decisions, runbooks and delivery status.
 
 Create packages when they contain real code. Empty modules in the roadmap do not imply a finished implementation. The dependency direction is web/jobs → application services → domain/repository interfaces → infrastructure. Marketing can render without database or authentication connectivity.
@@ -71,7 +77,7 @@ Organization isolation alone does not implement venue permissions or portal acce
 | Venue finance | Invoices, schedules, receipts, allocations, refunds, credits, reconciliation | Events, payment provider, reports |
 | People and partners | Staff profiles, availability, shifts, assignments, vendors, deliverables | Events, restricted payroll |
 | SaaS billing | VenueLoom plans, subscriptions, entitlements, platform billing references | Organization and access |
-| Integrations and automation | Connections, external IDs, webhook inbox, outbox, scheduled workflows | All modules via explicit events |
+| Integrations and migration | Connections, provider capabilities, imports, external IDs, sync policies/cursors/runs/conflicts, webhook inbox, outbox | All modules via explicit commands/events |
 | Reporting | Permission-aware projections and metric definitions | Transactional modules as source of truth |
 
 No central arbitrary JSON record table is the authoritative model. JSON is appropriate for provider payloads, versioned document snapshots, event metadata and validated extension fields; core relationships, statuses, money and dates are typed columns.
@@ -102,6 +108,8 @@ Commands validate input and authorization, check the entity version, then write 
 
 External side effects occur after commit via outbox workers. Workers lease rows, retry with backoff, deduplicate by stable keys and move exhausted jobs to a visible dead-letter state. Delivery is at least once; handlers must be idempotent. Incoming webhooks verify the raw-body signature, environment and connected account before persisting an inbox row. Acknowledge only after durable acceptance; order-independent reconciliation handles delayed or reordered events.
 
+The Integration Hub uses stable external mappings, provider version tokens when available, durable cursors and canonical payload hashes. Two-way synchronization suppresses echoes by origin/correlation/hash rather than timestamps. Financial/legal conflicts and booking-time conflicts require explicit reconciliation rather than silent last-write-wins. File migrations run as resumable jobs with discovery, mapping, dry run, exception review and post-import reconciliation.
+
 Integrations store encrypted secrets or secret-manager references, never secrets in browser code or logs. External identifiers are unique by organization/provider/provider-account/environment/object-type. Attachments stay private with expiring authorized download URLs, upload limits and a malware/quarantine state before distribution. Email/calendar sync needs per-account consent and revocation.
 
 ## Privacy, operations and evolution
@@ -120,4 +128,4 @@ Feature branches use schema-only or sanitized Neon branches. PR previews use the
 - [PostgreSQL range types](https://www.postgresql.org/docs/current/rangetypes.html)
 - [Neon serverless driver](https://neon.com/docs/serverless/serverless-driver)
 
-See [data model](data-model.md), [workflow and API contracts](workflows.md), [security model](security.md), and [delivery plan](delivery-plan.md) for implementation-level details.
+See [data model](data-model.md), [workflow and API contracts](workflows.md), [security model](security.md), [integration and migration hub](integration-migration-hub.md), and [delivery plan](delivery-plan.md) for implementation-level details.

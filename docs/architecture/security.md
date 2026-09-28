@@ -42,10 +42,18 @@ RLS protects organization rows, not application-level roles. A member cannot bec
 | Leaked attachment | Private storage, scoped signed URL, scanning | Other tenant cannot mint/download URL |
 | Sensitive logs | Structured redaction, no request body dumping | No secrets/payment details/contract bodies in logs |
 | Malicious inbound email | Sender verification and restricted workflow parsing | Email text cannot grant privileges or trigger arbitrary actions |
+| Forged/replayed provider webhook | Provider signature/secret verification, timestamp/replay checks, durable delivery ID dedupe | Invalid/replayed delivery cannot mutate a record |
+| Cross-tenant external mapping | Organization-scoped connection + composite mapping FKs/uniqueness | External ID from A cannot resolve/link to B |
+| Compromised OAuth/API credential | Least scopes, encrypted secret reference, revoke/reauthorize state, no credential logging | Revoked token stops work; secret absent from browser/logs |
+| Malicious migration file | Private upload, type/size limits, quarantine/scanning, bounded parser, no formulas/macros executed | Crafted file cannot execute code or escape tenant |
+| Unsafe sync overwrite | Provider version tokens, expected VenueLoom version, conflict queue for protected fields | Concurrent edit becomes conflict rather than silent overwrite |
+| Sync echo/amplification loop | Origin + connection + correlation + canonical hash suppression | Inbound change is not immediately written back indefinitely |
+| Automation bridge abuse | High-entropy per-connection secret, strict versioned schema, rate/replay limits | Arbitrary JSON cannot invoke unrestricted domain writes |
+| Provider URL / webhook SSRF | Provider endpoints from allowlisted adapter config; user callbacks require HTTPS and egress validation | Private/link-local destinations rejected |
 | Preview with real production data | Schema-only/sanitized branches, distinct env | No production database URL in PR environment |
 
 Use CSP, frame restrictions, strict content type, referrer policy and HTTPS. Apply rate limits to auth, imports, search, invitations and expensive exports. Sensitive commands support re-authentication when provider capability is available. Audit administrative/financial actions and exports with actor and correlation ID; do not treat UI activity feed as the sole security log.
 
 ## Production gate
 
-Production access requires verified auth configuration, restricted DB credentials, real PostgreSQL RLS tests, tenant/role tests, configured backups and restore exercise, monitoring, retention policy, and a reviewed release. Provider payments/signatures require test-mode lifecycle verification before live credentials. A local schema emulator is useful but cannot prove deployed credentials, network behavior or provider webhook configuration.
+Production access requires verified auth configuration, restricted DB credentials, real PostgreSQL RLS tests, tenant/role tests, configured backups and restore exercise, monitoring, retention policy, and a reviewed release. Provider payments/signatures and live synchronization require test-mode lifecycle verification before live credentials. Integration launch also requires tenant mapping tests, revoke/reauthorize tests, conflict/loop tests and safe import-file handling. A local schema emulator is useful but cannot prove deployed credentials, network behavior or provider webhook configuration.

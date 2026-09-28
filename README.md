@@ -6,7 +6,7 @@ From inquiry to event day, weave every part of your venue into one system.
 
 ## Start here
 
-The platform architecture is recorded **before the application foundation** in repository history. Read [the platform blueprint](docs/architecture/README.md), [data model](docs/architecture/data-model.md), and [delivery plan](docs/architecture/delivery-plan.md) before changing a business workflow.
+The platform architecture is recorded **before the application foundation** in repository history. Read [the platform blueprint](docs/architecture/README.md), [data model](docs/architecture/data-model.md), [integration and migration hub](docs/architecture/integration-migration-hub.md), and [delivery plan](docs/architecture/delivery-plan.md) before changing a business workflow.
 
 The approved visual direction is the supplied VenueLoom brand sheet: ivory canvas, Fraunces headlines, Manrope body text, woven V, ink navigation, and blue/teal/gold accents. The website and dashboard share this design system.
 
@@ -15,6 +15,8 @@ The approved visual direction is the supplied VenueLoom brand sheet: ivory canva
 - One TypeScript repository, a modular application, and PostgreSQL as the source of truth.
 - Organization-owned data, multiple venues, explicit memberships and scoped permissions.
 - Financial history, booking constraints, tenant isolation, and auditability are database concerns as well as application concerns.
+- Migration from existing systems is a first-class onboarding path with dry runs, mappings, deduplication, reconciliation and resumable imports.
+- Ongoing integrations are capability-driven per object and direction; VenueLoom never labels a provider "two-way" unless the provider can safely support the relevant operations.
 - Additive migrations are expected. Preventing fundamental ownership and workflow redesign is the goal; promising a database that never changes is not.
 - External payment collection, signature delivery, messaging, and production access require configured provider integrations. Tracking a status never implies performing the external action.
 
