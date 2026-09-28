@@ -12,6 +12,9 @@ export default async function IntegrationsPage() {
     const identity = await getIdentityState();
     redirect(identity.identity ? "/onboarding" : "/login");
   }
+  if (tenant.session.role !== "owner" && tenant.session.role !== "admin") {
+    redirect("/forbidden");
+  }
 
   const workspace = await withTenantTransaction(
     tenant.identity,
