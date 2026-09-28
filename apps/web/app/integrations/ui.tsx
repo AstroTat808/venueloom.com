@@ -661,12 +661,104 @@ function Summary({ label, value, tone = "plain" }: { label: string; value: numbe
   );
 }
 
+type SyncCenterData = {
+  summary: {
+    activeConnections: number;
+    pendingJobs: number;
+    deadLetters: number;
+    openConflicts: number;
+    unhealthyConnections: number;
+  };
+  connections: Array<{
+    id: string;
+    provider_code: string;
+    connection_name: string;
+    status: string;
+  }>;
+  bindings: Array<{
+    id: string;
+    provider_code: string;
+    provider_calendar_name: string;
+    sync_direction: string;
+    last_synced_at: string | null;
+    last_error: string | null;
+    sync_enabled: boolean;
+  }>;
+  feeds: Array<{
+    id: string;
+    provider: string;
+    unit_name: string;
+    last_synced_at: string | null;
+    last_error: string | null;
+    enabled: boolean;
+  }>;
+  queue: Array<{
+    id: string;
+    reason: string;
+    attempts: number;
+    last_error: string | null;
+    completed_at: string | null;
+    dead_lettered_at: string | null;
+    created_at: string;
+  }>;
+  imports: Array<{
+    id: string;
+    entity_type: string;
+    source_name: string;
+    state: string;
+    discovered_count: number;
+    create_count: number;
+    update_count: number;
+    skip_count: number;
+    conflict_count: number;
+    error_count: number;
+    created_at: string;
+  }>;
+};
+
+function providerDisplay(value: string) {
+  const names: Record<string, string> = {
+    "google-calendar": "Google Calendar",
+    "outlook-calendar": "Microsoft Outlook",
+    airbnb: "Airbnb",
+    vrbo: "Vrbo"
+  };
+  return names[value] ?? formatObject(value);
+}
+
 function SyncCenter({ providers }: { providers: ProviderDefinition[] }) {
-  const examples = [
-    { provider: "QuickBooks Online", object: "Invoices", direction: "VenueLoom → QBO", status: "Ready for adapter", count: "—" },
-    { provider: "Google Calendar", object: "Events", direction: "↔ Two-way", status: "Ready for OAuth", count: "—" },
-    { provider: "Dubsado", object: "Leads", direction: "Dubsado → VenueLoom", status: "Bridge planned", count: "—" },
-    { provider: "CSV / XLSX", object: "All import types", direction: "File → VenueLoom", status: "Preview engine ready", count: "7 types" }
+  const [data, setData] = useState<SyncCenterData | null>(null);
+  const [error, setError] = useState("");
+
+  async function load() {
+    const response = await fetch("/api/integrations/sync-center", { cache: "no-store" });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Unable to load sync center");
+      return;
+    }
+    setData(json);
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  const operationalRows = [
+    ...(data?.bindings ?? []).map((row) => ({
+      key: `binding:${row.id}`,
+      provider: providerDisplay(row.provider_code),
+      object: row.provider_calendar_name,
+      direction: row.sync_direction === "two_way" ? "↔ Two-way" : row.sync_direction === "inbound" ? "→ VenueLoom" : "VenueLoom →",
+      state: row.last_error ? "Needs attention" : row.sync_enabled ? "Active" : "Paused",
+      detail: row.last_synced_at ? new Date(row.last_synced_at).toLocaleString() : "Initial sync queued"
+    })),
+    ...(data?.feeds ?? []).map((row) => ({
+      key: `feed:${row.id}`,
+      provider: providerDisplay(row.provider),
+      object: row.unit_name,
+      direction: "↔ iCal availability",
+      state: row.last_error ? "Needs attention" : row.enabled ? "Active" : "Paused",
+      detail: row.last_synced_at ? new Date(row.last_synced_at).toLocaleString() : "Initial sync queued"
+    }))
   ];
 
   return (
@@ -675,42 +767,76 @@ function SyncCenter({ providers }: { providers: ProviderDefinition[] }) {
         <div>
           <span className="eyebrow">Sync Center</span>
           <h2>One place to see every data movement.</h2>
-          <p>Live run history appears here once a provider is authorized. Current rows show the connector foundation state.</p>
+          <p>Connection health, reconciliation work, dead letters, migration results, and conflicts are scoped to this VenueLoom organization.</p>
         </div>
-        <span className="secure-badge">{providers.length} catalog providers</span>
+        <button className="button secondary" onClick={() => void load()}>Refresh</button>
       </div>
+
+      {error && <div className="notice error">{error}</div>}
 
       <div className="sync-overview">
         <div className="sync-health-card">
-          <span>Connection health</span>
-          <strong>Not configured</strong>
-          <small>No production credentials are stored.</small>
+          <span>Active connections</span>
+          <strong>{data?.summary.activeConnections ?? 0}</strong>
+          <small>{data?.summary.unhealthyConnections ? `${data.summary.unhealthyConnections} needs attention` : "No provider errors reported"}</small>
         </div>
         <div className="sync-health-card">
-          <span>Failed records</span>
-          <strong>0</strong>
-          <small>Dead-letter queues begin with live adapters.</small>
+          <span>Pending / dead-letter jobs</span>
+          <strong>{data ? `${data.summary.pendingJobs} / ${data.summary.deadLetters}` : "0 / 0"}</strong>
+          <small>Dead letters stop retrying after the bounded attempt limit.</small>
         </div>
         <div className="sync-health-card">
           <span>Open conflicts</span>
-          <strong>0</strong>
-          <small>Protected-field conflicts require review.</small>
+          <strong>{data?.summary.openConflicts ?? 0}</strong>
+          <small>Protected changes require an explicit resolution.</small>
         </div>
       </div>
 
       <div className="sync-table">
         <div className="sync-table-head">
-          <span>Provider</span><span>Object</span><span>Direction</span><span>State</span><span>Records</span>
+          <span>Provider</span><span>Calendar / house</span><span>Direction</span><span>State</span><span>Last sync</span>
         </div>
-        {examples.map((row) => (
-          <div className="sync-table-row" key={row.provider + row.object}>
+        {operationalRows.length ? operationalRows.map((row) => (
+          <div className="sync-table-row" key={row.key}>
             <strong>{row.provider}</strong>
             <span>{row.object}</span>
             <span>{row.direction}</span>
-            <span className="sync-state">{row.status}</span>
-            <span>{row.count}</span>
+            <span className="sync-state">{row.state}</span>
+            <span>{row.detail}</span>
           </div>
-        ))}
+        )) : (
+          <div className="sync-table-row sync-empty-row">
+            <strong>No live sync configured</strong>
+            <span>Connect Google, Outlook, Airbnb, or Vrbo.</span>
+            <span>—</span><span>—</span><span>—</span>
+          </div>
+        )}
+      </div>
+
+      <div className="ops-grid">
+        <div className="ops-panel">
+          <div className="ops-panel-head"><h3>Recent migrations</h3><span>{data?.imports.length ?? 0}</span></div>
+          {(data?.imports ?? []).length ? data!.imports.map((run) => (
+            <div className="ops-row" key={run.id}>
+              <div><strong>{run.source_name}</strong><span>{formatObject(run.entity_type)} · {run.state}</span></div>
+              <small>{run.create_count} created · {run.update_count} updated · {run.skip_count} skipped · {run.conflict_count} conflicts</small>
+            </div>
+          )) : <p className="ops-empty">No committed migrations yet.</p>}
+        </div>
+
+        <div className="ops-panel">
+          <div className="ops-panel-head"><h3>Queue & dead letters</h3><span>{data?.queue.length ?? 0}</span></div>
+          {(data?.queue ?? []).length ? data!.queue.slice(0, 12).map((job) => (
+            <div className="ops-row" key={job.id}>
+              <div><strong>{job.reason.replaceAll("-", " ")}</strong><span>{job.dead_lettered_at ? "Dead letter" : job.completed_at ? "Completed" : "Pending"} · attempt {job.attempts}</span></div>
+              <small>{job.last_error ?? new Date(job.created_at).toLocaleString()}</small>
+            </div>
+          )) : <p className="ops-empty">No sync jobs yet.</p>}
+        </div>
+      </div>
+
+      <div className="notice">
+        {providers.length} providers are capability-mapped in the catalog. Only activated adapters create operational rows here.
       </div>
     </section>
   );
