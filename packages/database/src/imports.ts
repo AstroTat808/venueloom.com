@@ -312,9 +312,11 @@ export async function commitImportPreview(
   }
 
   await client.query(
-    `UPDATE import_runs SET state='completed',create_count=$2,skip_count=$3,error_count=0,completed_at=now(),updated_at=now()
-     WHERE organization_id=$1 AND id=$4`,
-    [session.organizationId, created + updated, skipped + conflicts, importRunId]
+    `UPDATE import_runs
+        SET state='completed',create_count=$2,update_count=$3,skip_count=$4,conflict_count=$5,
+            error_count=0,completed_at=now(),updated_at=now()
+      WHERE organization_id=$1 AND id=$6`,
+    [session.organizationId, created, updated, skipped, conflicts, importRunId]
   );
   return { importRunId, created, updated, skipped, conflicts };
 }
