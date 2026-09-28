@@ -60,6 +60,7 @@ export const importProviderProfiles: ImportProviderProfile[] = [
       },
       payments: {
         client_name: ["client name","client first name","client last name"],
+        client_email: ["client email"],
         amount: ["primary invoice paid","all invoices paid"]
       }
     }
@@ -118,6 +119,7 @@ export const importProviderProfiles: ImportProviderProfile[] = [
       },
       payments: {
         client_name: ["contact name","client name"],
+        client_email: ["contact email","email"],
         reference: ["transaction id","payment id"],
         received_date: ["payment date","date"],
         amount: ["payment amount","amount"],
