@@ -26,7 +26,7 @@ export async function POST(request: Request) {
         sourceUrl: String(body.sourceUrl ?? "")
       });
       await client.query(
-        "INSERT INTO integration_sync_queue(id,organization_id,feed_id,reason) VALUES ($1,$2,$3,'feed-connected')",
+        "INSERT INTO integration_sync_queue(id,organization_id,feed_id,reason) VALUES ($1,$2,$3,'feed-connected') ON CONFLICT DO NOTHING",
         [randomUUID(), session.organizationId, result.feedId]
       );
       return result;
