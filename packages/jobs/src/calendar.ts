@@ -35,7 +35,56 @@ type BindingRow = {
   provider_code: CalendarProvider;
   secret_ref: string;
   ciphertext: string;
+  venue_timezone: string;
 };
+
+
+function timezoneOffsetAt(instantMs: number, timeZone: string): number {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(new Date(instantMs))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  const renderedAsUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return renderedAsUtc - instantMs;
+}
+
+function zonedMidnight(dateOnly: string, timeZone: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateOnly);
+  if (!match) throw new Error("Invalid all-day calendar date");
+  const desiredUtc = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 0, 0, 0);
+  let guess = desiredUtc;
+  for (let iteration = 0; iteration < 3; iteration++) {
+    guess = desiredUtc - timezoneOffsetAt(guess, timeZone);
+  }
+  return new Date(guess).toISOString();
+}
+
+function normalizeExternalEventTimes(binding: BindingRow, external: ExternalCalendarEvent): ExternalCalendarEvent {
+  if (!external.allDay) return external;
+  return {
+    ...external,
+    startsAt: zonedMidnight(external.startsAt.slice(0, 10), binding.venue_timezone),
+    endsAt: zonedMidnight(external.endsAt.slice(0, 10), binding.venue_timezone)
+  };
+}
 
 function providerCredentials(provider: CalendarProvider) {
   if (provider === "google-calendar") {
@@ -62,10 +111,11 @@ function hashEvent(input: { name: string; starts_at: string; ends_at: string; ti
 
 async function loadBinding(bindingId: string): Promise<BindingRow> {
   const result = await getServicePool().query<BindingRow>(
-    `SELECT b.*,c.provider_code,c.secret_ref,s.ciphertext
+    `SELECT b.*,c.provider_code,c.secret_ref,s.ciphertext,v.timezone AS venue_timezone
        FROM calendar_bindings b
        JOIN integration_connections c ON c.organization_id=b.organization_id AND c.id=b.connection_id
        JOIN integration_secret_envelopes s ON s.organization_id=c.organization_id AND s.id=c.secret_ref::uuid
+       JOIN venues v ON v.organization_id=b.organization_id AND v.id=b.venue_id
       WHERE b.id=$1 AND b.sync_enabled=true AND c.status='active'`,
     [bindingId]
   );
@@ -123,7 +173,8 @@ async function hasVenueConflict(client: PoolClient, binding: BindingRow, eventId
   return Boolean(result.rows[0]?.conflict);
 }
 
-async function applyInbound(binding: BindingRow, external: ExternalCalendarEvent) {
+async function applyInbound(binding: BindingRow, incoming: ExternalCalendarEvent) {
+  const external = normalizeExternalEventTimes(binding, incoming);
   const mapping = await getServicePool().query<{ internal_id: string; last_seen_hash: string | null }>(
     `SELECT internal_id,last_seen_hash FROM external_mappings
       WHERE organization_id=$1 AND connection_id=$2 AND object_type='calendar_event' AND external_id=$3`,
@@ -330,6 +381,8 @@ export async function syncCalendarBinding(bindingId: string): Promise<void> {
   const windowEnd = binding.cursor_window_end ?? new Date(now + 730 * 86400000).toISOString();
 
   if (binding.sync_direction !== "outbound") {
+    const fullResync = !binding.cursor_value;
+    const syncStartedAt = new Date().toISOString();
     try {
       const pulled = await adapter.pullChanges({
         tokens,
@@ -339,6 +392,16 @@ export async function syncCalendarBinding(bindingId: string): Promise<void> {
         windowEnd
       });
       for (const event of pulled.events) await applyInbound(binding, event);
+      if (fullResync) {
+        await getServicePool().query(
+          `UPDATE calendar_blocks
+              SET state='cancelled',updated_at=now()
+            WHERE organization_id=$1 AND binding_id=$2 AND state='active'
+              AND last_seen_at<$3::timestamptz
+              AND starts_at<$5::timestamptz AND ends_at>$4::timestamptz`,
+          [binding.organization_id, binding.id, syncStartedAt, windowStart, windowEnd]
+        );
+      }
       await getServicePool().query(
         `UPDATE calendar_bindings SET cursor_value=$3,cursor_window_start=$4,cursor_window_end=$5,last_synced_at=now(),last_error=NULL,updated_at=now()
           WHERE organization_id=$1 AND id=$2`,
