@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { createOAuthState, getCalendarAdapter } from "@venueloom/integrations";
 import { saveOAuthState, withTenantTransaction, requireRuntimeEnv } from "@venueloom/database";
-import { getTenantSession } from "../../../../../../lib/auth";
+import { getIntegrationAdminSession } from "../../../../../../lib/auth";
 import { calendarProviderCredentials, calendarProviderFromPath } from "../../../../../../lib/calendar-auth";
 
 export async function GET(_request: Request, context: { params: Promise<{ provider: string }> }) {
-  const tenant = await getTenantSession();
-  if (!tenant) return NextResponse.redirect(new URL("/login", requireRuntimeEnv("PUBLIC_APP_URL")));
+  const tenant = await getIntegrationAdminSession();
+  if (!tenant) return NextResponse.redirect(new URL("/forbidden", requireRuntimeEnv("PUBLIC_APP_URL")));
   const { provider: providerPath } = await context.params;
   const provider = calendarProviderFromPath(providerPath);
   const adapter = getCalendarAdapter(provider);
