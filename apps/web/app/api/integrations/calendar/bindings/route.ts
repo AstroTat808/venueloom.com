@@ -25,7 +25,7 @@ export async function POST(request: Request) {
         blockAvailability: body.blockAvailability !== false
       });
       await client.query(
-        "INSERT INTO integration_sync_queue(id,organization_id,binding_id,reason) VALUES ($1,$2,$3,'binding-created')",
+        "INSERT INTO integration_sync_queue(id,organization_id,binding_id,reason) VALUES ($1,$2,$3,'binding-created') ON CONFLICT DO NOTHING",
         [randomUUID(), session.organizationId, id]
       );
       return id;
