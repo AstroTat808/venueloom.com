@@ -726,3 +726,78 @@ export async function listOpenSyncConflicts(organizationId: string) {
     return result.rows;
   });
 }
+
+export async function resolveSyncConflict(input: {
+  organizationId: string;
+  conflictId: string;
+  membershipId: string;
+  resolution: "venueloom" | "external" | "merged";
+  mergedCandidate?: {
+    summary?: string | null;
+    startsAt?: string;
+    endsAt?: string;
+    allDay?: boolean;
+    status?: "busy" | "tentative" | "cancelled";
+  };
+}) {
+  return withOrganizationTransaction(input.organizationId, async (client) => {
+    const result = await client.query<{
+      id: string; connection_id: string; internal_id: string | null; external_id: string | null;
+      local_candidate: Record<string, unknown>; external_candidate: Record<string, unknown>; state: string;
+    }>(
+      `SELECT id, connection_id, internal_id, external_id, local_candidate, external_candidate, state
+         FROM sync_conflicts
+        WHERE organization_id=$1 AND id=$2
+        FOR UPDATE`,
+      [input.organizationId, input.conflictId]
+    );
+    const conflict = result.rows[0];
+    if (!conflict || conflict.state !== "open") return null;
+    if (!conflict.internal_id) throw new Error("Conflict is not linked to a VenueLoom calendar block.");
+
+    if (input.resolution === "external" || input.resolution === "merged") {
+      const candidate = input.resolution === "external"
+        ? conflict.external_candidate
+        : { ...conflict.local_candidate, ...(input.mergedCandidate ?? {}) };
+
+      const startsAt = String(candidate.startsAt ?? conflict.local_candidate.startsAt);
+      const endsAt = String(candidate.endsAt ?? conflict.local_candidate.endsAt);
+      const start = new Date(startsAt);
+      const end = new Date(endsAt);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        throw new Error("Resolved calendar times are invalid.");
+      }
+
+      await client.query(
+        `UPDATE calendar_blocks
+            SET summary=$3, starts_at=$4, ends_at=$5, all_day=$6, status=$7, updated_at=now()
+          WHERE organization_id=$1 AND id=$2 AND source_type='venueloom'`,
+        [
+          input.organizationId, conflict.internal_id,
+          candidate.summary === null || candidate.summary === undefined ? null : String(candidate.summary),
+          start, end, Boolean(candidate.allDay),
+          ["busy","tentative","cancelled"].includes(String(candidate.status)) ? String(candidate.status) : "busy"
+        ]
+      );
+    }
+
+    if (conflict.external_id) {
+      await client.query(
+        `UPDATE external_mappings
+            SET last_seen_hash=NULL, updated_at=now()
+          WHERE organization_id=$1 AND connection_id=$2
+            AND object_type='calendar_event' AND external_id=$3`,
+        [input.organizationId, conflict.connection_id, conflict.external_id]
+      );
+    }
+
+    await client.query(
+      `UPDATE sync_conflicts
+          SET state='resolved', resolution=$3, resolved_by=$4, resolved_at=now(), updated_at=now()
+        WHERE organization_id=$1 AND id=$2`,
+      [input.organizationId, input.conflictId, input.resolution, input.membershipId]
+    );
+
+    return { connectionId: conflict.connection_id, internalId: conflict.internal_id };
+  });
+}
