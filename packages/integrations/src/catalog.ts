@@ -150,7 +150,7 @@ export const providerCatalog: ProviderDefinition[] = [
     shortName: "GC",
     category: "calendar",
     description: "Calendar availability and event synchronization using Google Calendar API notifications.",
-    implementation: "foundation",
+    implementation: "ready",
     connectionMethod: "oauth",
     launchWave: 1,
     capabilities: [
@@ -166,7 +166,7 @@ export const providerCatalog: ProviderDefinition[] = [
     shortName: "OC",
     category: "calendar",
     description: "Microsoft Graph calendar sync for events and scheduling availability.",
-    implementation: "foundation",
+    implementation: "ready",
     connectionMethod: "oauth",
     launchWave: 1,
     capabilities: [
