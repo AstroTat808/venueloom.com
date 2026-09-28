@@ -3,8 +3,10 @@
 import { useMemo, useRef, useState } from "react";
 import type { ProviderDefinition, ProviderCategory } from "@venueloom/integrations";
 import { importSchemas, type ImportEntity } from "@venueloom/importer";
+import { CalendarSyncPanel } from "./calendar-ui";
+import { LodgingSyncPanel } from "./lodging-ui";
 
-type DashboardTab = "catalog" | "migration" | "sync" | "conflicts";
+type DashboardTab = "catalog" | "migration" | "calendar" | "lodging" | "sync" | "conflicts";
 
 type PreviewResponse = {
   error?: string;
@@ -20,6 +22,7 @@ type PreviewResponse = {
     requiredMapped: number;
     canPreview: boolean;
   };
+  detectedProvider?: { id: string; name: string } | null;
   preview?: {
     totals: { discovered: number; create: number; skip: number; error: number };
     rows: Array<{
@@ -34,6 +37,8 @@ type PreviewResponse = {
 const tabs: Array<{ id: DashboardTab; label: string; hint: string }> = [
   { id: "catalog", label: "Integrations", hint: "Connect systems" },
   { id: "migration", label: "Migration", hint: "Bring your data" },
+  { id: "calendar", label: "Calendars", hint: "Google & Outlook" },
+  { id: "lodging", label: "Lodging", hint: "Airbnb & Vrbo" },
   { id: "sync", label: "Sync Center", hint: "Watch data flow" },
   { id: "conflicts", label: "Conflicts", hint: "Resolve changes" }
 ];
@@ -62,7 +67,8 @@ const categoryLabels: Record<string, string> = {
   storage: "Storage",
   communications: "Communications",
   data: "Data",
-  venue: "Venue systems"
+  venue: "Venue systems",
+  lodging: "Lodging"
 };
 
 function implementationLabel(provider: ProviderDefinition) {
@@ -86,7 +92,15 @@ function formatMode(mode: string) {
   return "Migration";
 }
 
-export function IntegrationsDashboard({ providers }: { providers: ProviderDefinition[] }) {
+export function IntegrationsDashboard({
+  providers,
+  organizationName,
+  venues
+}: {
+  providers: ProviderDefinition[];
+  organizationName: string;
+  venues: Array<{ id: string; name: string }>;
+}) {
   const [tab, setTab] = useState<DashboardTab>("catalog");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>("all");
@@ -136,9 +150,11 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
         </nav>
 
         <div className="sidebar-foot">
-          <div className="workspace-avatar">KE</div>
+          <div className="workspace-avatar">
+            {organizationName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "VL"}
+          </div>
           <div>
-            <strong>Koa's Events</strong>
+            <strong>{organizationName}</strong>
             <span>Organization workspace</span>
           </div>
         </div>
@@ -267,7 +283,11 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
           </section>
         )}
 
-        {tab === "migration" && <MigrationWizard />}
+        {tab === "migration" && <MigrationWizard venues={venues} />}
+
+        {tab === "calendar" && <CalendarSyncPanel venues={venues} />}
+
+        {tab === "lodging" && <LodgingSyncPanel venues={venues} />}
 
         {tab === "sync" && <SyncCenter providers={providers} />}
 
@@ -309,14 +329,21 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
                 <button className="button primary full" onClick={() => { setSelectedProvider(null); setTab("migration"); }}>
                   Start file migration
                 </button>
+              ) : selectedProvider.id === "google-calendar" || selectedProvider.id === "outlook-calendar" ? (
+                <button className="button primary full" onClick={() => { setSelectedProvider(null); setTab("calendar"); }}>
+                  Configure calendar sync
+                </button>
+              ) : selectedProvider.id === "airbnb" || selectedProvider.id === "vrbo" ? (
+                <button className="button primary full" onClick={() => { setSelectedProvider(null); setTab("lodging"); }}>
+                  Configure lodging sync
+                </button>
               ) : (
                 <>
                   <button className="button secondary full" disabled>
                     Connect {selectedProvider.name} — adapter activation pending
                   </button>
                   <div className="notice">
-                    The Connect control is intentionally locked until this provider's OAuth/API adapter is implemented and
-                    security-tested. The capability drawer shows exactly what will be eligible for sync when activated.
+                    This provider remains capability-mapped but inactive until its connector passes the documented release gates.
                   </div>
                 </>
               )}
@@ -328,7 +355,7 @@ export function IntegrationsDashboard({ providers }: { providers: ProviderDefini
   );
 }
 
-function MigrationWizard() {
+function MigrationWizard({ venues }: { venues: Array<{ id: string; name: string }> }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [entity, setEntity] = useState<ImportEntity>("clients");
   const [file, setFile] = useState<File | null>(null);
@@ -336,6 +363,15 @@ function MigrationWizard() {
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [selectedSheet, setSelectedSheet] = useState("");
   const [busy, setBusy] = useState(false);
+  const [commitBusy, setCommitBusy] = useState(false);
+  const [commitResult, setCommitResult] = useState<null | {
+    importRunId: string;
+    created: number;
+    updated: number;
+    skipped: number;
+    conflicts: number;
+  }>(null);
+  const [selectedVenueId, setSelectedVenueId] = useState(venues[0]?.id ?? "");
 
   async function preview(nextMapping?: Record<string, string | null>, sheetOverride?: string) {
     if (!file) return;
@@ -362,6 +398,30 @@ function MigrationWizard() {
     setResult(null);
     setMapping({});
     setSelectedSheet("");
+    setCommitResult(null);
+  }
+
+  async function commitMigration() {
+    if (!file || !result?.preview || result.preview.totals.error > 0) return;
+    setCommitBusy(true);
+    setCommitResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("entity", entity);
+      form.append("mapping", JSON.stringify(mapping));
+      if (selectedSheet) form.append("sheet", selectedSheet);
+      if (selectedVenueId) form.append("venueId", selectedVenueId);
+      const response = await fetch("/api/import/commit", { method: "POST", body: form });
+      const json = await response.json();
+      if (!response.ok) {
+        setResult((current) => current ? { ...current, error: json.error ?? "Import failed" } : { error: json.error ?? "Import failed" });
+        return;
+      }
+      setCommitResult(json);
+    } finally {
+      setCommitBusy(false);
+    }
   }
 
   return (
@@ -456,6 +516,9 @@ function MigrationWizard() {
                   <div>
                     <h3>Confirm field mapping</h3>
                     <p>VenueLoom guessed the best match. Change any mapping before running the dry run.</p>
+                    {result.detectedProvider && (
+                      <span className="provider-detected">{result.detectedProvider.name} export detected · smart aliases applied</span>
+                    )}
                   </div>
                   <span className={result.coverage?.canPreview ? "secure-badge" : "warning-badge"}>
                     {result.coverage?.mappedFields}/{result.coverage?.totalFields} mapped
@@ -535,11 +598,30 @@ function MigrationWizard() {
                   <p className="table-note">Showing the first 50 rows of {result.preview.rows.length}.</p>
                 )}
 
-                <div className="notice amber">
-                  Import commit is intentionally locked until authenticated organization context and the PostgreSQL migration are active.
-                  This prevents an upload from writing into the wrong venue or organization.
+                {venues.length > 0 && (
+                  <label className="commit-venue">
+                    <span>Target venue</span>
+                    <select value={selectedVenueId} onChange={(event) => setSelectedVenueId(event.target.value)}>
+                      <option value="">Organization-wide / no venue</option>
+                      {venues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
+                    </select>
+                  </label>
+                )}
+                <div className="notice">
+                  Commit re-parses the original file on the server, re-validates the mapping, verifies your organization and venue access, and records every imported row in the audit trail.
                 </div>
-                <button className="button disabled-button" disabled>Commit migration — authentication required</button>
+                <button
+                  className="button primary"
+                  disabled={commitBusy || result.preview.totals.error > 0}
+                  onClick={() => void commitMigration()}
+                >
+                  {commitBusy ? "Committing migration…" : "Commit migration"}
+                </button>
+                {commitResult && (
+                  <div className="notice">
+                    Migration committed · {commitResult.created} created · {commitResult.updated} updated · {commitResult.skipped} skipped · {commitResult.conflicts} conflicts queued.
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -550,13 +632,13 @@ function MigrationWizard() {
         <aside className="wizard-aside">
           <div className="aside-card">
             <span className="eyebrow">Safe migration</span>
-            <h3>Nothing is written during preview.</h3>
+            <h3>Preview first. Commit only after review.</h3>
             <ul>
               <li>Headers are auto-matched, then confirmed by you.</li>
               <li>Amounts become integer cents to preserve financial precision.</li>
               <li>Likely duplicates are skipped, not silently merged.</li>
               <li>Invalid dates, emails and numbers are surfaced row-by-row.</li>
-              <li>Bookings will still pass VenueLoom conflict checks when commit is enabled.</li>
+              <li>Bookings pass VenueLoom reservation, calendar, and lodging conflict checks at commit time.</li>
             </ul>
           </div>
           <div className="aside-card soft">
