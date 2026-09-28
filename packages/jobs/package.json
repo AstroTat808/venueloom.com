@@ -3,9 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
     "@venueloom/database": "0.1.0",
     "@venueloom/integrations": "0.1.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   }
 }
