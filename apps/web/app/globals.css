@@ -470,3 +470,21 @@ button:disabled { cursor: not-allowed; opacity: .65; }
 @media (max-width: 700px) {
   .merge-fields { grid-template-columns: 1fr; }
 }
+
+.sync-empty-row { color: var(--muted); }
+.ops-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+.ops-panel { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.ops-panel-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 14px; background: #eeeae1; }
+.ops-panel-head h3 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.ops-panel-head span { color: var(--muted); font-size: 9px; }
+.ops-row { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--line); font-size: 9px; }
+.ops-row strong, .ops-row span, .ops-row small { display: block; }
+.ops-row span, .ops-row small { color: var(--muted); margin-top: 3px; }
+.ops-row small { text-align: right; max-width: 55%; overflow-wrap: anywhere; }
+.ops-empty { margin: 0; padding: 16px; color: var(--muted); font-size: 9px; }
+
+@media (max-width: 800px) {
+  .ops-grid { grid-template-columns: 1fr; }
+  .ops-row { flex-direction: column; }
+  .ops-row small { text-align: left; max-width: 100%; }
+}
