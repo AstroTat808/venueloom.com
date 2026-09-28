@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS membership_venue_grants (
     REFERENCES venues (organization_id, id) ON DELETE CASCADE
 );
 
+ALTER TABLE import_runs ADD COLUMN IF NOT EXISTS commit_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS import_runs_commit_key_uq
+  ON import_runs (organization_id, commit_key) WHERE commit_key IS NOT NULL;
+
 ALTER TABLE import_runs
   ADD CONSTRAINT import_runs_organization_fk
   FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT;
@@ -138,3 +142,18 @@ DROP POLICY IF EXISTS tenant_isolation ON external_mappings;
 CREATE POLICY tenant_isolation ON external_mappings
 USING (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid)
 WITH CHECK (organization_id = NULLIF(current_setting('app.organization_id', true), '')::uuid);
+
+ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE organizations FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS organization_member_or_selected ON organizations;
+CREATE POLICY organization_member_or_selected ON organizations
+USING (
+  id = NULLIF(current_setting('app.organization_id', true), '')::uuid
+  OR EXISTS (
+    SELECT 1 FROM memberships m
+    WHERE m.organization_id = organizations.id
+      AND m.user_id = NULLIF(current_setting('app.user_id', true), '')::uuid
+      AND m.status = 'active'
+  )
+)
+WITH CHECK (id = NULLIF(current_setting('app.organization_id', true), '')::uuid);
