@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS clients (
   phone text,
   company text,
   notes text,
+  source_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, id)
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS inquiries (
   currency char(3) NOT NULL DEFAULT 'USD',
   status text NOT NULL DEFAULT 'new',
   source text,
+  source_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, id),
@@ -54,6 +56,7 @@ CREATE TABLE IF NOT EXISTS events (
   status text NOT NULL DEFAULT 'tentative',
   source text,
   historical_import boolean NOT NULL DEFAULT false,
+  source_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (ends_at IS NULL OR ends_at > starts_at),
