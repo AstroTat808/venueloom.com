@@ -83,3 +83,24 @@ export async function getLodgingDashboard(client: PoolClient, organizationId: st
   );
   return units.rows;
 }
+
+export async function getPublicLodgingCalendar(token: string) {
+  const { getPool } = await import("./client");
+  const result = await getPool().query<{
+    unit_name: string;
+    stay_id: string;
+    starts_on: string;
+    ends_on: string;
+    status: string;
+    source_provider: string;
+  }>("SELECT unit_name,stay_id,starts_on,ends_on,status,source_provider FROM resolve_lodging_export_calendar($1)", [sha256(token)]);
+  return {
+    name: result.rows[0]?.unit_name ?? "VenueLoom Availability",
+    events: result.rows.map((row) => ({
+      uid: row.stay_id,
+      startsOn: row.starts_on,
+      endsOn: row.ends_on,
+      summary: "Unavailable"
+    }))
+  };
+}
