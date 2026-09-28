@@ -1,11 +1,26 @@
 # Implementation status
 
-Architecture-first initialization is in progress. The platform blueprint is the target design, not a claim that every module is implemented.
+Architecture-first initialization is complete and application implementation has started.
 
-The architecture now includes the Integration & Migration Hub: provider capability manifests, one-time migrations, generic CSV/XLSX imports, stable external mappings, per-object sync policies, durable cursors/runs, conflict review, loop prevention and provider-specific rollout guidance for HoneyBook, Dubsado, Quicken and QuickBooks Online.
+## Implemented on the current integrations feature branch
 
-The existing approved website remains the visual reference. No production database, provider OAuth connection, live synchronization, payment processing, external signature delivery or team invitations are activated by these architecture commits. The earlier single-user D1 prototype is not the platform database foundation.
+- Next.js/React application workspace and VenueLoom integrations route.
+- Branded Integrations & Migration dashboard UI.
+- Searchable provider catalog with 30+ CRM, accounting, calendar, email, payment, marketing, automation, scheduling, document, storage, communications, data and venue-system entries.
+- Capability metadata per provider so migration, inbound, outbound and two-way modes are represented per object rather than globally.
+- Generic CSV/XLSX migration engine for clients, inquiries, events, invoices, payments, vendors and staff.
+- File-size and row-count limits.
+- Header auto-mapping and mapping coverage checks.
+- Normalization for email, phone, dates, whole numbers, money and booleans.
+- Deterministic row validation and in-file duplicate detection.
+- Server-side dry-run API with create/skip/error totals and row-level review results.
+- Migration wizard UI, Sync Center foundation, and conflict-resolution UI.
+- PostgreSQL migration file for import runs/rows plus connection/external-mapping foundation.
 
-Implementation should follow the delivery plan: generic migration infrastructure ships with the operations core; provider migration templates follow once target CRM/event models exist; live bidirectional sync is enabled only after the provider-specific release gates pass.
+## Deliberately gated
 
-This file will be updated with the exact application capabilities and verification evidence in the implementation commit.
+Production import **commit** is not enabled yet. VenueLoom does not yet have the authenticated organization-membership database context required by the architecture. Enabling writes before that exists would allow an upload/request to choose or spoof a tenant.
+
+Provider OAuth/API credentials and live sync are also not activated merely because their cards appear in the catalog. Each adapter must pass the release gates in docs/architecture/integration-migration-hub.md.
+
+The next persistence step is to wire verified authentication → active organization membership → transaction-local database tenant context, apply RLS, then connect the import commit adapter to the target CRM/event/finance repositories.

@@ -1,0 +1,13 @@
+{
+  "name": "@venueloom/importer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "csv-parse": "7.0.3",
+    "read-excel-file": "9.3.10"
+  }
+}
