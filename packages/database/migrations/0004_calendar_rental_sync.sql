@@ -161,7 +161,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS sync_conflicts_one_open_uq
   ON sync_conflicts (organization_id, connection_id, object_type, external_id)
   WHERE state = 'open' AND external_id IS NOT NULL;
 
-DO $
+DO $rls$
 DECLARE
   tbl text;
 BEGIN
@@ -178,7 +178,7 @@ BEGIN
       tbl
     );
   END LOOP;
-END $$;
+END $rls$;
 
 -- Narrow bootstrap helpers for scheduled workers/public rental feeds. They reveal only IDs
 -- needed to establish normal tenant context; business rows remain RLS-protected.
