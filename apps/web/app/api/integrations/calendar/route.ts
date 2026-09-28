@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCalendarDashboard, withTenantTransaction } from "@venueloom/database";
-import { getTenantSession } from "../../../../lib/auth";
+import { getIntegrationAdminSession } from "../../../../lib/auth";
 
 export async function GET() {
-  const tenant = await getTenantSession();
-  if (!tenant) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  const tenant = await getIntegrationAdminSession();
+  if (!tenant) return NextResponse.json({ error: "Owner or admin access required." }, { status: 403 });
   const data = await withTenantTransaction(tenant.identity, tenant.session.organizationId, async (client, session) => {
     const connections = await getCalendarDashboard(client, session.organizationId);
     const venues = await client.query<{ id: string; name: string }>(
