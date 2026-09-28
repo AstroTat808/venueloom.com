@@ -48,14 +48,16 @@ export async function connectLodgingCalendar(
 
   const sourceUrl = normalizeLodgingCalendarUrl(input.provider, input.sourceUrl);
   const secretId = await storeConnectionSecret(client, session.organizationId, null, `${input.provider}-ical-url`, sourceUrl);
-  const feedId = randomUUID();
-  await client.query(
+  const proposedFeedId = randomUUID();
+  const feedResult = await client.query<{ id: string }>(
     `INSERT INTO lodging_calendar_feeds(id,organization_id,unit_id,provider,source_url_secret_id)
      VALUES ($1,$2,$3,$4,$5)
      ON CONFLICT (organization_id,unit_id,provider)
-     DO UPDATE SET source_url_secret_id=EXCLUDED.source_url_secret_id,enabled=true,last_error=NULL,updated_at=now()`,
-    [feedId, session.organizationId, input.unitId, input.provider, secretId]
+     DO UPDATE SET source_url_secret_id=EXCLUDED.source_url_secret_id,enabled=true,last_error=NULL,updated_at=now()
+     RETURNING id`,
+    [proposedFeedId, session.organizationId, input.unitId, input.provider, secretId]
   );
+  const feedId = feedResult.rows[0]!.id;
 
   const token = randomBytes(32).toString("base64url");
   await client.query(
