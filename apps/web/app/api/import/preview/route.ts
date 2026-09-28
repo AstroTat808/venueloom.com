@@ -1,3 +1,4 @@
+import { verifyRequestOrigin } from "@netlify/identity";
 import { NextResponse } from "next/server";
 import {
   autoMapHeaders,
@@ -9,6 +10,7 @@ import {
   type ImportEntity,
   detectImportProvider
 } from "@venueloom/importer";
+import { getTenantSession } from "../../../../lib/auth";
 
 export const runtime = "nodejs";
 
@@ -23,6 +25,14 @@ const validEntities = new Set<ImportEntity>([
 ]);
 
 export async function POST(request: Request) {
+  try {
+    verifyRequestOrigin(request);
+  } catch {
+    return NextResponse.json({ error: "Request origin is not allowed." }, { status: 403 });
+  }
+  const tenant = await getTenantSession();
+  if (!tenant) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+
   const formData = await request.formData();
   const file = formData.get("file");
   const entity = formData.get("entity");
