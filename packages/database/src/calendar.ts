@@ -67,7 +67,10 @@ export async function createOAuthState(
 
 export async function consumeOAuthState(providerCode: string, state: string) {
   const hash = createHash("sha256").update(state).digest("hex");
+  const organizationId = state.split(".")[0] ?? "";
+  if (!/^[0-9a-f-]{36}$/i.test(organizationId)) return null;
   return withTransaction(async (client) => {
+    await setLocalContext(client, { organizationId });
     const found = await client.query<{
       id: string; organization_id: string; membership_id: string; return_path: string;
     }>(
@@ -79,8 +82,7 @@ export async function consumeOAuthState(providerCode: string, state: string) {
     );
     const row = found.rows[0];
     if (!row) return null;
-    await setLocalContext(client, { organizationId: row.organization_id });
-    await client.query("UPDATE integration_oauth_states SET used_at=now() WHERE id=$1", [row.id]);
+    await client.query("UPDATE integration_oauth_states SET used_at=now() WHERE organization_id=$1 AND id=$2", [row.organization_id, row.id]);
     return {
       organizationId: row.organization_id,
       membershipId: row.membership_id,
