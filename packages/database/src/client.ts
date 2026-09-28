@@ -23,6 +23,7 @@ export async function withTransaction<T>(
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await client.query("SET LOCAL ROLE venueloom_runtime");
     const value = await fn(client);
     await client.query("COMMIT");
     return value;
