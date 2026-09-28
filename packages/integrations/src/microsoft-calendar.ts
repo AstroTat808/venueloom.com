@@ -122,7 +122,7 @@ export async function pullMicrosoftCalendarEvents(input: {
   let deltaLink = "";
 
   while (url) {
-    const page = await json<{
+    const page: {
       value?: Array<{
         id: string; subject?: string; isAllDay?: boolean; showAs?: string; isCancelled?: boolean;
         lastModifiedDateTime?: string; changeKey?: string; "@removed"?: unknown;
@@ -130,7 +130,7 @@ export async function pullMicrosoftCalendarEvents(input: {
       }>;
       "@odata.nextLink"?: string;
       "@odata.deltaLink"?: string;
-    }>(await fetch(url, {
+    } = await json(await fetch(url, {
       headers: {
         Authorization: `Bearer ${input.accessToken}`,
         Prefer: 'outlook.timezone="UTC"'
