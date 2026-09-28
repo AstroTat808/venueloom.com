@@ -11,7 +11,8 @@ import {
   parseImportFile,
   validateImportFile,
   type FieldMapping,
-  type ImportEntity
+  type ImportEntity,
+  detectImportProvider
 } from "@venueloom/importer";
 import { getTenantSession } from "../../../../lib/auth";
 
@@ -49,10 +50,11 @@ export async function POST(request: Request) {
     if (!sheet) return NextResponse.json({ error: "Selected worksheet was not found." }, { status: 422 });
 
     const mapping = JSON.parse(rawMapping) as FieldMapping;
+    const providerProfile = detectImportProvider(sheet.headers);
     const coverage = mappingCoverage(entity as ImportEntity, mapping);
     if (!coverage.canPreview) return NextResponse.json({ error: "Required fields are not fully mapped." }, { status: 422 });
 
-    const preview = createImportPreview(entity as ImportEntity, sheet, mapping);
+    const preview = createImportPreview(entity as ImportEntity, sheet, mapping, { preserveUnmappedFields: providerProfile?.preserveUnmappedFields });
     if (preview.totals.error > 0) {
       return NextResponse.json({ error: "Resolve validation errors before committing.", preview }, { status: 422 });
     }
