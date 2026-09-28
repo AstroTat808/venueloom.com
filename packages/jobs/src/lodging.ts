@@ -90,7 +90,8 @@ export async function queueDueLodgingFeeds(): Promise<number> {
     await getServicePool().query(
       `INSERT INTO integration_sync_queue(id,organization_id,feed_id,reason)
        SELECT $1,$2,$3,'lodging-poll'
-       WHERE NOT EXISTS (SELECT 1 FROM integration_sync_queue WHERE feed_id=$3 AND completed_at IS NULL)`,
+       WHERE NOT EXISTS (SELECT 1 FROM integration_sync_queue WHERE feed_id=$3 AND completed_at IS NULL)
+       ON CONFLICT DO NOTHING`,
       [randomUUID(), row.organization_id, row.id]
     );
   }
