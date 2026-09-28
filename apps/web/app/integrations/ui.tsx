@@ -752,7 +752,8 @@ function ConflictCard({ conflict, onResolved }: { conflict: LiveConflict; onReso
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function resolve() {
+  async function resolve(resolutionOverride?: "venueloom" | "external" | "merged" | "ignored") {
+    const chosenResolution = resolutionOverride ?? resolution;
     setBusy(true);
     setError("");
     try {
@@ -760,12 +761,12 @@ function ConflictCard({ conflict, onResolved }: { conflict: LiveConflict; onReso
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          resolution,
-          mergedValue: resolution === "merged"
+          resolution: chosenResolution,
+          mergedValue: chosenResolution === "merged"
             ? {
                 ...(name.trim() ? { name: name.trim() } : {}),
-                ...(startsAt ? { startsAt: new Date(startsAt).toISOString() } : {}),
-                ...(endsAt ? { endsAt: new Date(endsAt).toISOString() } : {})
+                ...(startsAt ? { startsAt } : {}),
+                ...(endsAt ? { endsAt } : {})
               }
             : undefined
         })
@@ -813,8 +814,8 @@ function ConflictCard({ conflict, onResolved }: { conflict: LiveConflict; onReso
       {resolution === "merged" && (
         <div className="merge-fields">
           <label>Event name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Keep current if blank" /></label>
-          <label>Start<input type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label>
-          <label>End<input type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} /></label>
+          <label>Start with offset<input type="text" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} placeholder="2026-10-01T18:00:00-10:00" /></label>
+          <label>End with offset<input type="text" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} placeholder="2026-10-01T22:00:00-10:00" /></label>
         </div>
       )}
 
@@ -831,7 +832,7 @@ function ConflictCard({ conflict, onResolved }: { conflict: LiveConflict; onReso
         <button className="button primary" disabled={busy} onClick={() => void resolve()}>
           {busy ? "Resolving…" : resolution === "venueloom" ? "Keep VenueLoom" : resolution === "external" ? "Accept external" : resolution === "merged" ? "Save merged value" : "Resolve"}
         </button>
-        <button className="button secondary" disabled={busy} onClick={() => { setResolution("ignored"); void resolve(); }}>
+        <button className="button secondary" disabled={busy} onClick={() => void resolve("ignored")}>
           Ignore external change
         </button>
       </div>
