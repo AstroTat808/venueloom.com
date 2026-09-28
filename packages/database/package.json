@@ -2,5 +2,11 @@
   "name": "@venueloom/database",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "1.1.0"
+  }
 }
