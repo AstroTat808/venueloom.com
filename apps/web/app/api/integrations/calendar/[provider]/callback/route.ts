@@ -7,13 +7,13 @@ import {
   withTenantTransaction,
   requireRuntimeEnv
 } from "@venueloom/database";
-import { getTenantSession } from "../../../../../../lib/auth";
+import { getIntegrationAdminSession } from "../../../../../../lib/auth";
 import { calendarProviderCredentials, calendarProviderFromPath } from "../../../../../../lib/calendar-auth";
 
 export async function GET(request: Request, context: { params: Promise<{ provider: string }> }) {
-  const tenant = await getTenantSession();
+  const tenant = await getIntegrationAdminSession();
   const baseUrl = requireRuntimeEnv("PUBLIC_APP_URL").replace(/\/$/, "");
-  if (!tenant) return NextResponse.redirect(`${baseUrl}/login`);
+  if (!tenant) return NextResponse.redirect(`${baseUrl}/forbidden`);
 
   const { provider: providerPath } = await context.params;
   const provider = calendarProviderFromPath(providerPath);
