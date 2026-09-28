@@ -11,7 +11,8 @@ export type ProviderCategory =
   | "storage"
   | "communications"
   | "data"
-  | "venue";
+  | "venue"
+  | "lodging";
 
 export type ProviderImplementation =
   | "ready"
@@ -47,7 +48,8 @@ export type IntegrationObject =
   | "email"
   | "campaigns"
   | "audiences"
-  | "notifications";
+  | "notifications"
+  | "lodging_reservations";
 
 export interface ProviderCapability {
   object: IntegrationObject;
