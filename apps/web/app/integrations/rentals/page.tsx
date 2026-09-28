@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-
+ 
 type RentalData = {
   venues: Array<{ id: string; name: string; timezone: string }>;
   venueCalendars: Array<{ id: string; venueId: string; name: string; resourceKind: string; timezone: string }>;
@@ -10,8 +9,7 @@ type RentalData = {
 };
 
 export default function RentalIntegrationsPage() {
-  const search = useSearchParams();
-  const initialProvider = search.get("provider") === "vrbo" ? "vrbo" : "airbnb";
+  const initialProvider: "airbnb" | "vrbo" = "airbnb";
   const [data, setData] = useState<RentalData | null>(null);
   const [providerCode, setProviderCode] = useState<"airbnb" | "vrbo">(initialProvider);
   const [venueId, setVenueId] = useState("");
@@ -23,6 +21,8 @@ export default function RentalIntegrationsPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    const selected = new URLSearchParams(window.location.search).get("provider");
+    if (selected === "vrbo" || selected === "airbnb") setProviderCode(selected);
     void fetch("/api/integrations/rentals")
       .then(async (response) => {
         const json = await response.json();
