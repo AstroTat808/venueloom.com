@@ -458,8 +458,15 @@ ALTER TABLE user_identities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_identities FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS user_identities_self ON user_identities;
 CREATE POLICY user_identities_self ON user_identities
-  USING (provider = current_setting('app.identity_provider', true) AND subject = current_setting('app.identity_subject', true))
-  WITH CHECK (provider = current_setting('app.identity_provider', true) AND subject = current_setting('app.identity_subject', true));
+  USING (
+    provider = current_setting('app.identity_provider', true)
+    AND subject = current_setting('app.identity_subject', true)
+  )
+  WITH CHECK (
+    provider = current_setting('app.identity_provider', true)
+    AND subject = current_setting('app.identity_subject', true)
+    AND user_id = app_user_id()
+  );
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users FORCE ROW LEVEL SECURITY;
