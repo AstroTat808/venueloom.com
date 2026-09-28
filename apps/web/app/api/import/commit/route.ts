@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     const coverage = mappingCoverage(entity as ImportEntity, mapping);
     if (!coverage.canPreview) return NextResponse.json({ error: "Required fields are not fully mapped." }, { status: 422 });
 
-    const preview = createImportPreview(entity as ImportEntity, sheet, mapping, { preserveUnmappedFields: providerProfile?.preserveUnmappedFields });
+    const preview = createImportPreview(entity as ImportEntity, sheet, mapping, { preserveUnmappedFields: providerProfile?.preserveUnmappedFields, providerProfileId: providerProfile?.id });
     if (preview.totals.error > 0) {
       return NextResponse.json({ error: "Resolve validation errors before committing.", preview }, { status: 422 });
     }
