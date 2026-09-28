@@ -149,3 +149,36 @@ BEGIN
     );
   END LOOP;
 END $$;
+
+-- Narrow bootstrap helpers for scheduled workers/public rental feeds. They reveal only IDs
+-- needed to establish normal tenant context; business rows remain RLS-protected.
+CREATE OR REPLACE FUNCTION venueloom_sync_tenant_ids()
+RETURNS TABLE (organization_id uuid)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT DISTINCT c.organization_id
+  FROM integration_connections c
+  WHERE c.status = 'active'
+    AND c.provider_code IN ('google-calendar','outlook-calendar','airbnb','vrbo');
+$$;
+
+CREATE OR REPLACE FUNCTION venueloom_resolve_rental_feed(p_token_hash text)
+RETURNS TABLE (
+  organization_id uuid,
+  venue_calendar_id uuid,
+  listing_name text,
+  timezone text
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT r.organization_id, r.venue_calendar_id, r.listing_name, vc.timezone
+  FROM rental_calendar_links r
+  JOIN venue_calendars vc
+    ON vc.organization_id = r.organization_id AND vc.id = r.venue_calendar_id
+  WHERE r.outbound_token_hash = p_token_hash AND r.active = true
+  LIMIT 1;
+$$;
