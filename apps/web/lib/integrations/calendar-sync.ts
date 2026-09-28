@@ -36,7 +36,7 @@ function hash(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-async function usableToken(
+export async function getUsableCalendarToken(
   organizationId: string,
   connectionId: string,
   providerCode: "google-calendar" | "outlook-calendar",
@@ -261,7 +261,7 @@ export async function reconcileCalendarLink(
 
   for (const link of selected) {
     try {
-      const token = await usableToken(link.organizationId, link.connectionId, link.providerCode, link.encryptedToken);
+      const token = await getUsableCalendarToken(link.organizationId, link.connectionId, link.providerCode, link.encryptedToken);
       if (link.syncMode === "inbound" || link.syncMode === "two_way") {
         await reconcileInbound(link, token);
       }
