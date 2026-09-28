@@ -71,7 +71,8 @@ async function writeTarget(
   principal: WorkspacePrincipal,
   entity: ImportEntity,
   row: Record<string, unknown>,
-  venueId: string | null
+  venueId: string | null,
+  source: Record<string, unknown>
 ): Promise<{ targetId?: string; outcome: "create" | "skip"; reason?: string }> {
   if (entity === "clients") {
     const email = text(row.email);
@@ -84,9 +85,9 @@ async function writeTarget(
     }
     const id = randomUUID();
     await client.query(
-      `INSERT INTO clients (id, organization_id, name, email, phone, company, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [id, principal.organizationId, text(row.name), email, text(row.phone), text(row.company), text(row.notes)]
+      `INSERT INTO clients (id, organization_id, name, email, phone, company, notes, source_metadata)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, principal.organizationId, text(row.name), email, text(row.phone), text(row.company), text(row.notes), JSON.stringify(source)]
     );
     return { targetId: id, outcome: "create" };
   }
@@ -108,13 +109,13 @@ async function writeTarget(
     await client.query(
       `INSERT INTO inquiries (
         id, organization_id, venue_id, client_id, name, email, phone, company,
-        event_name, event_type, proposed_date, guest_count, estimated_minor, status, source
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        event_name, event_type, proposed_date, guest_count, estimated_minor, status, source, source_metadata
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
       [
         id, principal.organizationId, venueId, clientId,
         text(row.name) ?? text(row.event_name) ?? "Imported inquiry",
         email, text(row.phone), text(row.company), text(row.event_name), text(row.event_type),
-        date, num(row.guest_count), num(row.estimated_amount), text(row.status) ?? "new", text(row.source)
+        date, num(row.guest_count), num(row.estimated_amount), text(row.status) ?? "new", text(row.source), JSON.stringify(source)
       ]
     );
     return { targetId: id, outcome: "create" };
@@ -163,12 +164,12 @@ async function writeTarget(
     await client.query(
       `INSERT INTO events (
         id, organization_id, venue_id, client_id, name, event_type, starts_at, ends_at,
-        timezone, guest_count, booking_minor, status, source, historical_import
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'migration',$13)`,
+        timezone, guest_count, booking_minor, status, source, historical_import, source_metadata
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'migration',$13,$14)`,
       [
         id, principal.organizationId, venueId, clientId, eventName, text(row.event_type),
         startDate, endValue ? endDate : null, venue?.timezone ?? "UTC", num(row.guest_count),
-        num(row.booking_amount), text(row.status) ?? "tentative", historical
+        num(row.booking_amount), text(row.status) ?? "tentative", historical, JSON.stringify(source)
       ]
     );
 
@@ -361,7 +362,7 @@ export async function commitImport(
       }
 
       try {
-        const result = await writeTarget(client, principal, input.entity, row.normalized, input.venueId ?? null);
+        const result = await writeTarget(client, principal, input.entity, row.normalized, input.venueId ?? null, row.source);
         if (result.outcome === "create") created++;
         else skipped++;
 
