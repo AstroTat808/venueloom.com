@@ -91,3 +91,16 @@ test("detects HoneyBook contact/project-style exports", async () => {
   assert.equal(mapping.event_name, "Project Name");
   assert.equal(mapping.status, "Pipeline Stage");
 });
+
+
+test("rejects date-only values for event datetimes to avoid timezone ambiguity", () => {
+  const mapping = autoMapHeaders("events", ["Event Name", "Start"]);
+  const preview = createImportPreview("events", {
+    sheetName: "Events",
+    headers: ["Event Name", "Start"],
+    rowCount: 1,
+    rows: [{ "Event Name": "Date-only event", Start: "2026-12-31" }]
+  }, mapping);
+  assert.equal(preview.totals.error, 1);
+  assert.match(preview.rows[0]?.issues[0]?.message ?? "", /time and UTC offset/i);
+});
