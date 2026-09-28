@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderDefinition, ProviderCategory } from "@venueloom/integrations";
 import { importSchemas, type ImportEntity } from "@venueloom/importer";
 import { CalendarSyncPanel } from "./calendar-ui";
@@ -715,8 +715,145 @@ function SyncCenter({ providers }: { providers: ProviderDefinition[] }) {
   );
 }
 
+type LiveConflict = {
+  id: string;
+  object_type: string;
+  internal_id?: string | null;
+  external_id?: string | null;
+  field_name: string;
+  venueloom_value: unknown;
+  external_value: unknown;
+  created_at: string;
+  provider_code?: string | null;
+  connection_name?: string | null;
+  event_name?: string | null;
+};
+
+function conflictValue(value: unknown) {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const parts = [
+      record.name ? String(record.name) : null,
+      record.startsAt || record.starts_at ? `Start: ${String(record.startsAt ?? record.starts_at)}` : null,
+      record.endsAt || record.ends_at ? `End: ${String(record.endsAt ?? record.ends_at)}` : null
+    ].filter(Boolean);
+    return parts.length ? parts.join(" · ") : JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function ConflictCard({ conflict, onResolved }: { conflict: LiveConflict; onResolved: () => void }) {
+  const [resolution, setResolution] = useState<"venueloom" | "external" | "merged" | "ignored">("venueloom");
+  const [name, setName] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function resolve() {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/integrations/conflicts/${conflict.id}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resolution,
+          mergedValue: resolution === "merged"
+            ? {
+                ...(name.trim() ? { name: name.trim() } : {}),
+                ...(startsAt ? { startsAt: new Date(startsAt).toISOString() } : {}),
+                ...(endsAt ? { endsAt: new Date(endsAt).toISOString() } : {})
+              }
+            : undefined
+        })
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        setError(json.error ?? "Unable to resolve conflict");
+        return;
+      }
+      onResolved();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="conflict-demo">
+      <div className="conflict-demo-head">
+        <div>
+          <span className="eyebrow">{conflict.provider_code?.replaceAll("_", " ") ?? "External system"} · {conflict.field_name}</span>
+          <h3>{conflict.event_name ?? "Protected synchronized record"}</h3>
+          <p>Detected {new Date(conflict.created_at).toLocaleString()} · {conflict.connection_name ?? "Connected calendar"}</p>
+        </div>
+        <span className="warning-badge">Needs review</span>
+      </div>
+
+      <div className="comparison-grid">
+        <button className={resolution === "venueloom" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("venueloom")}>
+          <span>Keep VenueLoom</span>
+          <strong>Current value</strong>
+          <small>{conflictValue(conflict.venueloom_value)}</small>
+        </button>
+        <button className={resolution === "external" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("external")}>
+          <span>Use external</span>
+          <strong>Incoming value</strong>
+          <small>{conflictValue(conflict.external_value)}</small>
+        </button>
+        <button className={resolution === "merged" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("merged")}>
+          <span>Merge manually</span>
+          <strong>Custom value</strong>
+          <small>VenueLoom re-checks availability before saving.</small>
+        </button>
+      </div>
+
+      {resolution === "merged" && (
+        <div className="merge-fields">
+          <label>Event name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Keep current if blank" /></label>
+          <label>Start<input type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label>
+          <label>End<input type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} /></label>
+        </div>
+      )}
+
+      <div className="conflict-impact">
+        <strong>Before a date/time resolution VenueLoom re-checks:</strong>
+        <span>reservation availability</span>
+        <span>external calendar blocks</span>
+        <span>lodging occupancy blocks</span>
+        <span>event version</span>
+      </div>
+
+      {error && <div className="notice error">{error}</div>}
+      <div className="conflict-actions">
+        <button className="button primary" disabled={busy} onClick={() => void resolve()}>
+          {busy ? "Resolving…" : resolution === "venueloom" ? "Keep VenueLoom" : resolution === "external" ? "Accept external" : resolution === "merged" ? "Save merged value" : "Resolve"}
+        </button>
+        <button className="button secondary" disabled={busy} onClick={() => { setResolution("ignored"); void resolve(); }}>
+          Ignore external change
+        </button>
+      </div>
+    </article>
+  );
+}
+
 function ConflictCenter() {
-  const [resolution, setResolution] = useState<"venueloom" | "external" | "merged">("venueloom");
+  const [conflicts, setConflicts] = useState<LiveConflict[]>([]);
+  const [error, setError] = useState("");
+
+  async function load() {
+    const response = await fetch("/api/integrations/conflicts", { cache: "no-store" });
+    const json = await response.json();
+    if (!response.ok) {
+      setError(json.error ?? "Unable to load conflicts");
+      return;
+    }
+    setConflicts(json.conflicts ?? []);
+  }
+
+  useEffect(() => { void load(); }, []);
 
   return (
     <section className="content-section">
@@ -724,58 +861,23 @@ function ConflictCenter() {
         <div>
           <span className="eyebrow">Conflict resolution</span>
           <h2>Protected changes never disappear into “last write wins.”</h2>
-          <p>VenueLoom will queue concurrent edits to booking dates, issued invoices, payments and executed contracts for explicit review.</p>
+          <p>Concurrent calendar edits and availability conflicts stay pending until an authorized VenueLoom user explicitly resolves them.</p>
         </div>
-        <span className="secure-badge">0 live conflicts</span>
+        <span className={conflicts.length ? "warning-badge" : "secure-badge"}>{conflicts.length} open conflict{conflicts.length === 1 ? "" : "s"}</span>
       </div>
 
+      {error && <div className="notice error">{error}</div>}
+
       <div className="conflict-layout">
-        <div className="empty-state compact">
-          <div className="empty-orbit">✓</div>
-          <h3>No live conflicts.</h3>
-          <p>When integrations are connected, competing VenueLoom and provider edits will appear here with both values, timestamps and source versions.</p>
-        </div>
-
-        <div className="conflict-demo">
-          <div className="conflict-demo-head">
-            <div>
-              <span className="eyebrow">Conflict UI preview</span>
-              <h3>Event start time changed in two systems</h3>
-              <p>This is a non-live example showing the exact review experience.</p>
-            </div>
-            <span className="warning-badge">Protected field</span>
+        {!conflicts.length ? (
+          <div className="empty-state compact">
+            <div className="empty-orbit">✓</div>
+            <h3>No live conflicts.</h3>
+            <p>Competing VenueLoom and external calendar changes will appear here with both values and a protected resolution workflow.</p>
           </div>
-
-          <div className="comparison-grid">
-            <button className={resolution === "venueloom" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("venueloom")}>
-              <span>Keep VenueLoom</span>
-              <strong>6:00 PM</strong>
-              <small>Edited by venue manager · version 18</small>
-            </button>
-            <button className={resolution === "external" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("external")}>
-              <span>Use external CRM</span>
-              <strong>7:00 PM</strong>
-              <small>Dubsado project update · source version 9921</small>
-            </button>
-            <button className={resolution === "merged" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("merged")}>
-              <span>Merge manually</span>
-              <strong>Custom value</strong>
-              <small>Review related end time and reservation first</small>
-            </button>
-          </div>
-
-          <div className="conflict-impact">
-            <strong>Before resolution VenueLoom would re-check:</strong>
-            <span>reservation availability</span>
-            <span>setup/teardown buffers</span>
-            <span>calendar write-back policy</span>
-            <span>event version</span>
-          </div>
-
-          <button className="button disabled-button" disabled>
-            Resolve example — live conflict required
-          </button>
-        </div>
+        ) : (
+          conflicts.map((conflict) => <ConflictCard key={conflict.id} conflict={conflict} onResolved={() => void load()} />)
+        )}
       </div>
     </section>
   );
