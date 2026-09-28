@@ -232,12 +232,13 @@ export async function findRentalFeedByToken(token: string) {
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const pool = getPool();
   const result = await pool.query<{
-    organization_id: string; venue_calendar_id: string; listing_name: string; timezone: string;
+    organization_id: string; venue_calendar_id: string; connection_id: string;
+    provider_code: "airbnb" | "vrbo"; listing_name: string; timezone: string;
   }>("SELECT * FROM venueloom_resolve_rental_feed($1)", [tokenHash]);
   return result.rows[0] ?? null;
 }
 
-export async function listBlocksForPublicFeed(organizationId: string, venueCalendarId: string) {
+export async function listBlocksForPublicFeed(organizationId: string, venueCalendarId: string, excludeConnectionId?: string | null) {
   return withTransaction(async (client) => {
     await setLocalContext(client, { organizationId });
     const result = await client.query<{
@@ -249,8 +250,9 @@ export async function listBlocksForPublicFeed(organizationId: string, venueCalen
           AND status <> 'cancelled'
           AND ends_at >= now() - interval '1 day'
           AND starts_at <= now() + interval '2 years'
+          AND ($3::uuid IS NULL OR connection_id IS DISTINCT FROM $3::uuid)
         ORDER BY starts_at`,
-      [organizationId, venueCalendarId]
+      [organizationId, venueCalendarId, excludeConnectionId ?? null]
     );
     return result.rows;
   });
