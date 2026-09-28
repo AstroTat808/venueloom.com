@@ -187,6 +187,11 @@ export async function bootstrapFirstOrganization(
        VALUES ($1,$2,$3,$4,$5)`,
       [venueId, organizationId, input.venueName, input.timezone, input.currency ?? "USD"]
     );
+    await client.query(
+      `INSERT INTO venue_calendars (id, organization_id, venue_id, name, resource_kind, timezone)
+       VALUES ($1,$2,$3,$4,'venue',$5)`,
+      [randomUUID(), organizationId, venueId, `${input.venueName} Calendar`, input.timezone]
+    );
 
     return {
       membershipId,
