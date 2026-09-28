@@ -334,3 +334,8 @@ button:disabled { cursor: not-allowed; opacity: .65; }
   .auth-card { padding: 24px 18px; margin-top: 18px; border-radius: 16px; }
   .auth-card h1 { font-size: 34px; }
 }
+
+.conflict-list { display: grid; gap: 14px; }
+.comparison-grid.two { grid-template-columns: 1fr 1fr; }
+.conflict-actions { display: flex; gap: 9px; flex-wrap: wrap; }
+@media (max-width: 650px) { .comparison-grid.two { grid-template-columns: 1fr; } }
