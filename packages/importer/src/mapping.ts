@@ -1,5 +1,6 @@
 import { importSchemas } from "./schemas";
 import type { FieldMapping, ImportEntity } from "./types";
+import type { ImportProviderProfile } from "./provider-profiles";
 
 function normalizeHeader(value: string): string {
   return value
@@ -10,7 +11,7 @@ function normalizeHeader(value: string): string {
     .trim();
 }
 
-export function autoMapHeaders(entity: ImportEntity, headers: string[]): FieldMapping {
+export function autoMapHeaders(entity: ImportEntity, headers: string[], profile?: ImportProviderProfile | null): FieldMapping {
   const normalizedHeaders = headers.map((header) => ({
     original: header,
     normalized: normalizeHeader(header)
@@ -18,7 +19,8 @@ export function autoMapHeaders(entity: ImportEntity, headers: string[]): FieldMa
 
   const mapping: FieldMapping = {};
   for (const field of importSchemas[entity]) {
-    const aliases = [field.label, field.key, ...field.aliases].map(normalizeHeader);
+    const profileAliases = profile?.entityAliases[entity]?.[field.key] ?? [];
+    const aliases = [field.label, field.key, ...field.aliases, ...profileAliases].map(normalizeHeader);
     const exact = normalizedHeaders.find((header) => aliases.includes(header.normalized));
     mapping[field.key] = exact?.original ?? null;
   }
