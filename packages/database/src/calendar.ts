@@ -557,7 +557,16 @@ export async function markMissingExternalBlocksCancelled(
   seenExternalIds: string[]
 ) {
   return withOrganizationTransaction(organizationId, async (client) => {
-    if (!seenExternalIds.length) return;
+    if (!seenExternalIds.length) {
+      await client.query(
+        `UPDATE calendar_blocks
+            SET status='cancelled', updated_at=now()
+          WHERE organization_id=$1 AND connection_id=$2
+            AND external_id IS NOT NULL AND status <> 'cancelled'`,
+        [organizationId, connectionId]
+      );
+      return;
+    }
     await client.query(
       `UPDATE calendar_blocks
           SET status='cancelled', updated_at=now()
@@ -607,5 +616,113 @@ export async function getIntegrationConnection(organizationId: string, connectio
       [organizationId, connectionId]
     );
     return result.rows[0] ?? null;
+  });
+}
+
+export async function getCalendarMappingByExternalId(
+  organizationId: string,
+  connectionId: string,
+  externalId: string
+) {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    const result = await client.query<{
+      internal_id: string; external_version: string | null; last_seen_hash: string | null;
+    }>(
+      `SELECT internal_id, external_version, last_seen_hash
+         FROM external_mappings
+        WHERE organization_id=$1 AND connection_id=$2
+          AND object_type='calendar_event' AND external_id=$3
+        LIMIT 1`,
+      [organizationId, connectionId, externalId]
+    );
+    return result.rows[0] ?? null;
+  });
+}
+
+export async function getVenueLoomCalendarBlock(
+  organizationId: string,
+  blockId: string
+) {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    const result = await client.query<{
+      id: string; venue_calendar_id: string; summary: string | null; starts_at: Date;
+      ends_at: Date; all_day: boolean; status: string; updated_at: Date;
+    }>(
+      `SELECT id, venue_calendar_id, summary, starts_at, ends_at, all_day, status, updated_at
+         FROM calendar_blocks
+        WHERE organization_id=$1 AND id=$2 AND source_type='venueloom'
+        LIMIT 1`,
+      [organizationId, blockId]
+    );
+    return result.rows[0] ?? null;
+  });
+}
+
+export async function upsertCalendarConflict(input: {
+  organizationId: string;
+  connectionId: string;
+  venueCalendarId: string;
+  internalId: string;
+  externalId: string;
+  localCandidate: Record<string, unknown>;
+  externalCandidate: Record<string, unknown>;
+  fieldSummary: string[];
+}) {
+  return withOrganizationTransaction(input.organizationId, async (client) => {
+    const existing = await client.query<{ id: string }>(
+      `SELECT id FROM sync_conflicts
+        WHERE organization_id=$1 AND connection_id=$2 AND object_type='calendar_event'
+          AND external_id=$3 AND state='open'
+        LIMIT 1`,
+      [input.organizationId, input.connectionId, input.externalId]
+    );
+    if (existing.rows[0]) {
+      await client.query(
+        `UPDATE sync_conflicts
+            SET local_candidate=$4, external_candidate=$5, field_summary=$6, updated_at=now()
+          WHERE organization_id=$1 AND id=$2 AND connection_id=$3`,
+        [
+          input.organizationId, existing.rows[0].id, input.connectionId,
+          JSON.stringify(input.localCandidate), JSON.stringify(input.externalCandidate),
+          JSON.stringify(input.fieldSummary)
+        ]
+      );
+      return existing.rows[0].id;
+    }
+    const id = randomUUID();
+    await client.query(
+      `INSERT INTO sync_conflicts (
+        id, organization_id, connection_id, venue_calendar_id, object_type,
+        internal_id, external_id, local_candidate, external_candidate, field_summary
+      ) VALUES ($1,$2,$3,$4,'calendar_event',$5,$6,$7,$8,$9)`,
+      [
+        id, input.organizationId, input.connectionId, input.venueCalendarId,
+        input.internalId, input.externalId, JSON.stringify(input.localCandidate),
+        JSON.stringify(input.externalCandidate), JSON.stringify(input.fieldSummary)
+      ]
+    );
+    return id;
+  });
+}
+
+export async function listOpenSyncConflicts(organizationId: string) {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    const result = await client.query<{
+      id: string; connection_id: string; venue_calendar_id: string | null; internal_id: string | null;
+      external_id: string | null; local_candidate: Record<string, unknown>;
+      external_candidate: Record<string, unknown>; field_summary: string[]; created_at: Date;
+      provider_code: string; connection_name: string;
+    }>(
+      `SELECT sc.id, sc.connection_id, sc.venue_calendar_id, sc.internal_id, sc.external_id,
+              sc.local_candidate, sc.external_candidate, sc.field_summary, sc.created_at,
+              c.provider_code, c.connection_name
+         FROM sync_conflicts sc
+         JOIN integration_connections c
+           ON c.organization_id=sc.organization_id AND c.id=sc.connection_id
+        WHERE sc.organization_id=$1 AND sc.state='open'
+        ORDER BY sc.created_at DESC`,
+      [organizationId]
+    );
+    return result.rows;
   });
 }
