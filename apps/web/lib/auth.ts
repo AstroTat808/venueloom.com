@@ -28,3 +28,11 @@ export async function getIdentityState() {
   const resolved = await resolveIdentity(identity);
   return { identity, memberships: resolved.memberships };
 }
+
+export async function getIntegrationAdminSession(): Promise<
+  { identity: VerifiedIdentity; session: TenantSession } | null
+> {
+  const tenant = await getTenantSession();
+  if (!tenant) return null;
+  return tenant.session.role === "owner" || tenant.session.role === "admin" ? tenant : null;
+}
