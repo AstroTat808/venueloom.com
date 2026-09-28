@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS inquiries (
   estimated_minor bigint CHECK (estimated_minor IS NULL OR estimated_minor >= 0),
   currency text NOT NULL DEFAULT 'USD',
   source text,
-  status text NOT NULL DEFAULT 'new',
+  status text NOT NULL DEFAULT 'new' CHECK (status IN ('new','contacted','tour_scheduled','proposal_sent','booked','lost')),
   custom_fields jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
