@@ -14,7 +14,7 @@ import {
   type ImportEntity,
   detectImportProvider
 } from "@venueloom/importer";
-import { getTenantSession } from "../../../../lib/auth";
+import { getIntegrationAdminSession } from "../../../../lib/auth";
 
 export const runtime = "nodejs";
 
@@ -23,7 +23,7 @@ const validEntities = new Set<ImportEntity>(["clients","inquiries","events","inv
 export async function POST(request: Request) {
   try {
     verifyRequestOrigin(request);
-    const tenant = await getTenantSession();
+    const tenant = await getIntegrationAdminSession();
     if (!tenant) return NextResponse.json({ error: "Authentication and organization membership are required." }, { status: 401 });
 
     const form = await request.formData();
