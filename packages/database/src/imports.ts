@@ -25,7 +25,7 @@ async function upsertClient(
   organizationId: string,
   row: Record<string, unknown>,
   source: string
-): Promise<string | null> {
+): Promise<{ id: string; created: boolean } | null> {
   const name = text(row.name) ?? text(row.client_name);
   if (!name) return null;
   const email = text(row.email) ?? text(row.client_email);
@@ -33,24 +33,32 @@ async function upsertClient(
   const id = randomUUID();
 
   if (normalizedEmail) {
-    const result = await client.query<{ id: string }>(
+    const inserted = await client.query<{ id: string }>(
       `INSERT INTO clients(id,organization_id,name,email,normalized_email,phone,organization_name,notes,source)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (organization_id, normalized_email) WHERE normalized_email IS NOT NULL
-       DO UPDATE SET name=EXCLUDED.name, phone=COALESCE(EXCLUDED.phone,clients.phone),
-                     organization_name=COALESCE(EXCLUDED.organization_name,clients.organization_name),
-                     notes=COALESCE(EXCLUDED.notes,clients.notes), updated_at=now()
+       DO NOTHING
        RETURNING id`,
       [id, organizationId, name, email, normalizedEmail, text(row.phone), text(row.company), text(row.notes), source]
     );
-    return result.rows[0]?.id ?? null;
+    if (inserted.rows[0]) return { id: inserted.rows[0].id, created: true };
+
+    const updated = await client.query<{ id: string }>(
+      `UPDATE clients
+          SET name=$3,email=$4,phone=COALESCE($5,phone),organization_name=COALESCE($6,organization_name),
+              notes=COALESCE($7,notes),updated_at=now()
+        WHERE organization_id=$1 AND normalized_email=$2
+        RETURNING id`,
+      [organizationId, normalizedEmail, name, email, text(row.phone), text(row.company), text(row.notes)]
+    );
+    return updated.rows[0] ? { id: updated.rows[0].id, created: false } : null;
   }
 
   await client.query(
     "INSERT INTO clients(id,organization_id,name,email,phone,organization_name,notes,source) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
     [id, organizationId, name, email, text(row.phone), text(row.company), text(row.notes), source]
   );
-  return id;
+  return { id, created: true };
 }
 
 async function venueHasConflict(
@@ -95,12 +103,15 @@ async function commitTarget(
   const org = session.organizationId;
 
   if (entity === "clients") {
-    const targetId = await upsertClient(client, org, row, source);
-    return targetId ? { targetId, outcome: "update" } : { outcome: "skip" };
+    const clientResult = await upsertClient(client, org, row, source);
+    return clientResult
+      ? { targetId: clientResult.id, outcome: clientResult.created ? "create" : "update" }
+      : { outcome: "skip" };
   }
 
   if (entity === "inquiries") {
-    const clientId = await upsertClient(client, org, row, source);
+    const clientResult = await upsertClient(client, org, row, source);
+    const clientId = clientResult?.id ?? null;
     const id = randomUUID();
     await client.query(
       `INSERT INTO inquiries(id,organization_id,venue_id,client_id,name,contact_email,contact_phone,event_type,proposed_date,guests,estimated_minor,currency,source,status,custom_fields)
@@ -117,7 +128,8 @@ async function commitTarget(
 
   if (entity === "events") {
     if (!venueId) return { outcome: "conflict", issue: "Select a venue before importing events." };
-    const clientId = await upsertClient(client, org, row, source);
+    const clientResult = await upsertClient(client, org, row, source);
+    const clientId = clientResult?.id ?? null;
     const startsAt = text(row.starts_at);
     if (!startsAt) return { outcome: "conflict", issue: "Event start time is required." };
     const endsAt = text(row.ends_at) ?? new Date(new Date(startsAt).getTime() + 4 * 60 * 60 * 1000).toISOString();
@@ -146,7 +158,8 @@ async function commitTarget(
   }
 
   if (entity === "invoices") {
-    const clientId = await upsertClient(client, org, { name: row.client_name, email: row.client_email }, source);
+    const clientResult = await upsertClient(client, org, { name: row.client_name, email: row.client_email }, source);
+    const clientId = clientResult?.id ?? null;
     const id = randomUUID();
     try {
       await client.query(
@@ -163,7 +176,8 @@ async function commitTarget(
   }
 
   if (entity === "payments") {
-    const clientId = await upsertClient(client, org, { name: row.client_name }, source);
+    const clientResult = await upsertClient(client, org, { name: row.client_name }, source);
+    const clientId = clientResult?.id ?? null;
     const invoiceNumber = text(row.invoice_number);
     let invoiceId: string | null = null;
     if (invoiceNumber) {
@@ -193,16 +207,23 @@ async function commitTarget(
     const email = text(row.email);
     const normalizedEmail = email?.toLowerCase() ?? null;
     if (normalizedEmail) {
-      const result = await client.query<{ id: string }>(
+      const inserted = await client.query<{ id: string }>(
         `INSERT INTO vendors(id,organization_id,name,contact_name,email,normalized_email,phone,category,notes)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          ON CONFLICT (organization_id,normalized_email) WHERE normalized_email IS NOT NULL
-         DO UPDATE SET name=EXCLUDED.name,contact_name=EXCLUDED.contact_name,phone=EXCLUDED.phone,
-                       category=EXCLUDED.category,notes=EXCLUDED.notes,updated_at=now()
+         DO NOTHING
          RETURNING id`,
         [id, org, text(row.name) ?? "Imported vendor", text(row.contact_name), email, normalizedEmail, text(row.phone), text(row.category), text(row.notes)]
       );
-      return { targetId: result.rows[0]?.id, outcome: "update" };
+      if (inserted.rows[0]) return { targetId: inserted.rows[0].id, outcome: "create" };
+      const updated = await client.query<{ id: string }>(
+        `UPDATE vendors
+            SET name=$3,contact_name=$4,email=$5,phone=$6,category=$7,notes=$8,updated_at=now()
+          WHERE organization_id=$1 AND normalized_email=$2
+          RETURNING id`,
+        [org, normalizedEmail, text(row.name) ?? "Imported vendor", text(row.contact_name), email, text(row.phone), text(row.category), text(row.notes)]
+      );
+      return updated.rows[0] ? { targetId: updated.rows[0].id, outcome: "update" } : { outcome: "skip" };
     }
     await client.query(
       "INSERT INTO vendors(id,organization_id,name,contact_name,email,phone,category,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
@@ -215,15 +236,23 @@ async function commitTarget(
   const email = text(row.email);
   const normalizedEmail = email?.toLowerCase() ?? null;
   if (normalizedEmail) {
-    const result = await client.query<{ id: string }>(
+    const inserted = await client.query<{ id: string }>(
       `INSERT INTO staff_profiles(id,organization_id,name,email,normalized_email,phone,role_title,active)
        VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,true))
        ON CONFLICT (organization_id,normalized_email) WHERE normalized_email IS NOT NULL
-       DO UPDATE SET name=EXCLUDED.name,phone=EXCLUDED.phone,role_title=EXCLUDED.role_title,active=EXCLUDED.active,updated_at=now()
+       DO NOTHING
        RETURNING id`,
       [id, org, text(row.name) ?? "Imported staff", email, normalizedEmail, text(row.phone), text(row.role), row.active]
     );
-    return { targetId: result.rows[0]?.id, outcome: "update" };
+    if (inserted.rows[0]) return { targetId: inserted.rows[0].id, outcome: "create" };
+    const updated = await client.query<{ id: string }>(
+      `UPDATE staff_profiles
+          SET name=$3,email=$4,phone=$5,role_title=$6,active=COALESCE($7,active),updated_at=now()
+        WHERE organization_id=$1 AND normalized_email=$2
+        RETURNING id`,
+      [org, normalizedEmail, text(row.name) ?? "Imported staff", email, text(row.phone), text(row.role), row.active]
+    );
+    return updated.rows[0] ? { targetId: updated.rows[0].id, outcome: "update" } : { outcome: "skip" };
   }
   await client.query(
     "INSERT INTO staff_profiles(id,organization_id,name,email,phone,role_title,active) VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,true))",
