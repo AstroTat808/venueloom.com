@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
 import {
+  applyProviderProfile,
   autoMapHeaders,
   createImportPreview,
+  detectProviderProfile,
   mappingCoverage,
   parseImportFile,
+  profileAliases,
   validateImportFile,
   type FieldMapping,
   type ImportEntity
@@ -44,20 +47,22 @@ export async function POST(request: Request) {
     const sourceHash = createHash("sha256").update(bytes).digest("hex");
     const sheets = await parseImportFile(file.name, bytes);
     const requestedSheet = formData.get("sheet");
-    const sheet =
+    const rawSheet =
       typeof requestedSheet === "string" && requestedSheet
         ? sheets.find((candidate) => candidate.sheetName === requestedSheet)
         : sheets[0];
 
-    if (!sheet || sheet.rowCount === 0) {
+    if (!rawSheet || rawSheet.rowCount === 0) {
       return Response.json({ error: "The selected sheet does not contain importable rows." }, { status: 422 });
     }
 
+    const detected = detectProviderProfile(rawSheet.headers);
+    const sheet = applyProviderProfile(detected?.id ?? null, entity as ImportEntity, rawSheet);
     const rawMapping = formData.get("mapping");
     const mapping: FieldMapping =
       typeof rawMapping === "string" && rawMapping
         ? JSON.parse(rawMapping)
-        : autoMapHeaders(entity as ImportEntity, sheet.headers);
+        : autoMapHeaders(entity as ImportEntity, sheet.headers, profileAliases(entity as ImportEntity, detected?.id ?? null));
 
     const coverage = mappingCoverage(entity as ImportEntity, mapping);
     if (!coverage.canPreview) {
