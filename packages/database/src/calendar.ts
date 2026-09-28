@@ -566,3 +566,44 @@ export async function markMissingExternalBlocksCancelled(
     );
   });
 }
+
+export async function storeIntegrationSecretForOrganization(input: {
+  organizationId: string; connectionId: string; purpose: string; encryptedValue: string;
+}) {
+  return withOrganizationTransaction(input.organizationId, async (client) => {
+    const existing = await client.query<{ id: string }>(
+      `SELECT id FROM integration_secrets
+        WHERE organization_id=$1 AND connection_id=$2 AND purpose=$3
+        ORDER BY created_at DESC LIMIT 1`,
+      [input.organizationId, input.connectionId, input.purpose]
+    );
+    if (existing.rows[0]) {
+      await client.query(
+        "UPDATE integration_secrets SET encrypted_value=$3, rotated_at=now() WHERE organization_id=$1 AND id=$2",
+        [input.organizationId, existing.rows[0].id, input.encryptedValue]
+      );
+      return existing.rows[0].id;
+    }
+    const id = randomUUID();
+    await client.query(
+      `INSERT INTO integration_secrets (id, organization_id, connection_id, purpose, encrypted_value)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [id, input.organizationId, input.connectionId, input.purpose, input.encryptedValue]
+    );
+    return id;
+  });
+}
+
+export async function getIntegrationConnection(organizationId: string, connectionId: string) {
+  return withOrganizationTransaction(organizationId, async (client) => {
+    const result = await client.query<{
+      id: string; provider_code: string; connection_name: string; external_account_id: string | null; status: string;
+    }>(
+      `SELECT id, provider_code, connection_name, external_account_id, status
+         FROM integration_connections
+        WHERE organization_id=$1 AND id=$2 LIMIT 1`,
+      [organizationId, connectionId]
+    );
+    return result.rows[0] ?? null;
+  });
+}
