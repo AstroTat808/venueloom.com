@@ -29,7 +29,7 @@ export const providerCatalog: ProviderDefinition[] = [
     category: "lodging",
     description: "House reservation availability sync using Airbnb host iCal export/import links.",
     implementation: "ready",
-    connectionMethod: "file",
+    connectionMethod: "ical",
     launchWave: 1,
     capabilities: [
       { object: "lodging_reservations", modes: ["inbound", "outbound", "two_way"] },
@@ -46,7 +46,7 @@ export const providerCatalog: ProviderDefinition[] = [
     category: "lodging",
     description: "House reservation availability sync using Vrbo reservation-calendar iCal feeds.",
     implementation: "ready",
-    connectionMethod: "file",
+    connectionMethod: "ical",
     launchWave: 1,
     capabilities: [
       { object: "lodging_reservations", modes: ["inbound", "outbound", "two_way"] },
