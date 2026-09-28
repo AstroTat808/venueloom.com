@@ -634,6 +634,8 @@ function SyncCenter({ providers }: { providers: ProviderDefinition[] }) {
 }
 
 function ConflictCenter() {
+  const [resolution, setResolution] = useState<"venueloom" | "external" | "merged">("venueloom");
+
   return (
     <section className="content-section">
       <div className="section-heading">
@@ -645,27 +647,52 @@ function ConflictCenter() {
         <span className="secure-badge">0 live conflicts</span>
       </div>
 
-      <div className="empty-state">
-        <div className="empty-orbit">✓</div>
-        <h3>No conflicts to resolve.</h3>
-        <p>When integrations are connected, competing VenueLoom and provider edits will appear here with both values, timestamps and source versions.</p>
-        <div className="conflict-example">
-          <div>
-            <span>Example protected field</span>
-            <strong>Event start time</strong>
+      <div className="conflict-layout">
+        <div className="empty-state compact">
+          <div className="empty-orbit">✓</div>
+          <h3>No live conflicts.</h3>
+          <p>When integrations are connected, competing VenueLoom and provider edits will appear here with both values, timestamps and source versions.</p>
+        </div>
+
+        <div className="conflict-demo">
+          <div className="conflict-demo-head">
+            <div>
+              <span className="eyebrow">Conflict UI preview</span>
+              <h3>Event start time changed in two systems</h3>
+              <p>This is a non-live example showing the exact review experience.</p>
+            </div>
+            <span className="warning-badge">Protected field</span>
           </div>
-          <div>
-            <span>VenueLoom</span>
-            <strong>6:00 PM</strong>
+
+          <div className="comparison-grid">
+            <button className={resolution === "venueloom" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("venueloom")}>
+              <span>Keep VenueLoom</span>
+              <strong>6:00 PM</strong>
+              <small>Edited by venue manager · version 18</small>
+            </button>
+            <button className={resolution === "external" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("external")}>
+              <span>Use external CRM</span>
+              <strong>7:00 PM</strong>
+              <small>Dubsado project update · source version 9921</small>
+            </button>
+            <button className={resolution === "merged" ? "comparison-card selected" : "comparison-card"} onClick={() => setResolution("merged")}>
+              <span>Merge manually</span>
+              <strong>Custom value</strong>
+              <small>Review related end time and reservation first</small>
+            </button>
           </div>
-          <div>
-            <span>External CRM</span>
-            <strong>7:00 PM</strong>
+
+          <div className="conflict-impact">
+            <strong>Before resolution VenueLoom would re-check:</strong>
+            <span>reservation availability</span>
+            <span>setup/teardown buffers</span>
+            <span>calendar write-back policy</span>
+            <span>event version</span>
           </div>
-          <div>
-            <span>Resolution</span>
-            <strong>Manual review</strong>
-          </div>
+
+          <button className="button disabled-button" disabled>
+            Resolve example — live conflict required
+          </button>
         </div>
       </div>
     </section>
