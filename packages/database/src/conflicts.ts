@@ -39,7 +39,8 @@ async function queueConnectionBindings(
        WHERE NOT EXISTS (
          SELECT 1 FROM integration_sync_queue
           WHERE organization_id=$2 AND binding_id=$3 AND completed_at IS NULL
-       )`,
+       )
+       ON CONFLICT DO NOTHING`,
       [randomUUID(), organizationId, binding.id]
     );
   }
