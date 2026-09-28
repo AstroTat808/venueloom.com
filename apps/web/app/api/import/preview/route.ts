@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   const entity = formData.get("entity");
 
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Choose a CSV, XLSX, or XLS file." }, { status: 422 });
+    return NextResponse.json({ error: "Choose a CSV or XLSX file." }, { status: 422 });
   }
   if (typeof entity !== "string" || !validEntities.has(entity as ImportEntity)) {
     return NextResponse.json({ error: "Choose a valid VenueLoom record type." }, { status: 422 });
