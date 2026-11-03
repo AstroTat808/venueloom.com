@@ -1,5 +1,2 @@
 import { redirect } from "next/navigation";
-
-export default function Home() {
-  redirect("/integrations");
-}
+export default function Home(){redirect("/dashboard");}

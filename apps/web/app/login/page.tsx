@@ -14,7 +14,7 @@ export default function LoginPage() {
   useEffect(() => {
     void handleAuthCallback()
       .then((result) => {
-        if (result?.user) router.replace("/integrations");
+        if (result?.user) router.replace("/dashboard");
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Authentication callback failed."));
   }, [router]);
@@ -25,7 +25,7 @@ export default function LoginPage() {
     setError("");
     try {
       await login(email, password);
-      router.replace("/integrations");
+      router.replace("/dashboard");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed.");
