@@ -77,7 +77,7 @@ export async function createBooking(principal:WorkspacePrincipal,input:{venueId:
     const calendars=await db.query<{id:string}>("SELECT id FROM venue_calendars WHERE organization_id=$1 AND venue_id=$2 AND active=true AND blocks_booking=true AND resource_kind='venue' ORDER BY created_at LIMIT 1",[principal.organizationId,input.venueId]);
     const calendar=calendars.rows[0];
     if(!calendar) throw Object.assign(new Error("Create an active venue calendar before booking."),{status:409});
-    const conflict=await db.query("SELECT 1 FROM calendar_blocks WHERE organization_id=$1 AND calendar_id=$2 AND starts_at<$4 AND ends_at>$3 AND status NOT IN ('cancelled') LIMIT 1",[principal.organizationId,calendar.id,start.toISOString(),end.toISOString()]);
+    const conflict=await db.query("SELECT 1 FROM calendar_blocks WHERE organization_id=$1 AND venue_calendar_id=$2 AND starts_at<$4 AND ends_at>$3 AND status!='cancelled' LIMIT 1",[principal.organizationId,calendar.id,start.toISOString(),end.toISOString()]);
     if(conflict.rowCount) throw Object.assign(new Error("This venue is unavailable for the selected dates."),{status:409});
     if(input.clientId) {
       const found=await db.query("SELECT 1 FROM clients WHERE organization_id=$1 AND id=$2",[principal.organizationId,input.clientId]);
@@ -86,8 +86,8 @@ export async function createBooking(principal:WorkspacePrincipal,input:{venueId:
     const id=randomUUID(),blockId=randomUUID();
     await db.query("INSERT INTO events (id,organization_id,venue_id,client_id,name,starts_at,ends_at,timezone,guest_count,status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'confirmed')",
       [id,principal.organizationId,input.venueId,input.clientId||null,input.name.trim(),start.toISOString(),end.toISOString(),venue.timezone,input.guestCount??null]);
-    await db.query("INSERT INTO calendar_blocks (id,organization_id,calendar_id,venue_id,starts_at,ends_at,status,source_type,source_id) VALUES ($1,$2,$3,$4,$5,$6,'confirmed','event',$7)",
-      [blockId,principal.organizationId,calendar.id,input.venueId,start.toISOString(),end.toISOString(),id]);
+    await db.query("INSERT INTO calendar_blocks (id,organization_id,venue_calendar_id,starts_at,ends_at,status,source_type,external_id) VALUES ($1,$2,$3,$4,$5,'busy','venueloom',$6)",
+      [blockId,principal.organizationId,calendar.id,start.toISOString(),end.toISOString(),id]);
     return {id};
   });
 }
@@ -99,12 +99,12 @@ export async function changeBookingStage(principal:WorkspacePrincipal,input:{id:
     const event=found.rows[0];if(!event)throw Object.assign(new Error("Booking not found."),{status:404});
     await db.query("SELECT pg_advisory_xact_lock(hashtext($1))",[event.venue_id]);
     if(input.stage==="confirmed") {
-      const collision=await db.query("SELECT 1 FROM calendar_blocks WHERE organization_id=$1 AND venue_id=$2 AND starts_at<$4 AND ends_at>$3 AND status!='cancelled' AND NOT (source_type='event' AND source_id=$5) LIMIT 1",
+      const collision=await db.query("SELECT 1 FROM calendar_blocks WHERE organization_id=$1 AND venue_calendar_id=$2 AND starts_at<$4 AND ends_at>$3 AND status!='cancelled' AND NOT (source_type='venueloom' AND external_id=$5) LIMIT 1",
         [principal.organizationId,event.venue_id,event.starts_at,event.ends_at,input.id]);
       if(collision.rowCount)throw Object.assign(new Error("Booking conflicts with existing availability."),{status:409});
     }
     await db.query("UPDATE events SET status=$3,updated_at=now() WHERE organization_id=$1 AND id=$2",[principal.organizationId,input.id,input.stage]);
-    await db.query("UPDATE calendar_blocks SET status=$3 WHERE organization_id=$1 AND source_type='event' AND source_id=$2",[principal.organizationId,input.id,input.stage]);
+    await db.query("UPDATE calendar_blocks SET status=CASE WHEN $3='cancelled' THEN 'cancelled' WHEN $3='tentative' THEN 'tentative' ELSE 'busy' END WHERE organization_id=$1 AND source_type='venueloom' AND external_id=$2",[principal.organizationId,input.id,input.stage]);
     return {id:input.id,stage:input.stage};
   });
 }
