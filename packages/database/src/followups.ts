@@ -35,3 +35,11 @@ export async function scheduleCrmFollowup(p:WorkspacePrincipal,input:{inquiryId:
   return {id};
  });
 }
+
+export async function listCrmManagement(p:WorkspacePrincipal){
+ return withTenantTransaction(p,async db=>{
+  const templates=await db.query("SELECT id,name FROM crm_email_templates WHERE organization_id=$1 AND enabled=true ORDER BY name LIMIT 100",[p.organizationId]);
+  const followups=await db.query("SELECT f.id,f.due_at,f.state,i.name FROM crm_followups f JOIN inquiries i ON i.id=f.inquiry_id AND i.organization_id=f.organization_id WHERE f.organization_id=$1 AND i.venue_id=ANY($2::uuid[]) ORDER BY f.due_at DESC LIMIT 100",[p.organizationId,p.venueIds]);
+  return {templates:templates.rows,followups:followups.rows};
+ });
+}
