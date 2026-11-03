@@ -99,7 +99,7 @@ export async function changeBookingStage(principal:WorkspacePrincipal,input:{id:
     const event=found.rows[0];if(!event)throw Object.assign(new Error("Booking not found."),{status:404});
     await db.query("SELECT pg_advisory_xact_lock(hashtext($1))",[event.venue_id]);
     if(input.stage==="confirmed") {
-      const collision=await db.query("SELECT 1 FROM calendar_blocks WHERE organization_id=$1 AND venue_calendar_id=$2 AND starts_at<$4 AND ends_at>$3 AND status!='cancelled' AND NOT (source_type='venueloom' AND external_id=$5) LIMIT 1",
+      const collision=await db.query("SELECT 1 FROM calendar_blocks WHERE organization_id=$1 AND venue_calendar_id IN (SELECT id FROM venue_calendars WHERE organization_id=$1 AND venue_id=$2 AND blocks_booking=true AND active=true) AND starts_at<$4 AND ends_at>$3 AND status!='cancelled' AND NOT (source_type='venueloom' AND external_id=$5) LIMIT 1",
         [principal.organizationId,event.venue_id,event.starts_at,event.ends_at,input.id]);
       if(collision.rowCount)throw Object.assign(new Error("Booking conflicts with existing availability."),{status:409});
     }
