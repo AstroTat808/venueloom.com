@@ -1,5 +1,5 @@
-import CrmPanel from "./crm-panel";
 "use client";
+import CrmPanel from "./crm-panel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 type Venue={id:string;name:string;timezone:string;currency:string};
 type Client={id:string;name:string;email:string|null;phone:string|null;company:string|null;notes:string|null};
